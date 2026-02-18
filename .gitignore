@@ -1,0 +1,17 @@
+.claude/
+.DS_Store
+__pycache__/
+
+# 영상/데이터 (대용량)
+preprocess/data/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+
+# 분석 결과 JSON
+*_analysis_phase*.json
+
+# DTW 레퍼런스 (모범 영상에서 생성, 각 환경에서 재생성)
+ds_modules/reference_*.json

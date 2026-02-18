@@ -1,0 +1,22 @@
+{
+  "elbow_angle": {
+    "d": 0.1892,
+    "weight": 0.1213
+  },
+  "back_angle": {
+    "d": 0.0581,
+    "weight": 0.0372
+  },
+  "hand_offset": {
+    "d": -0.4441,
+    "weight": 0.2847
+  },
+  "head_tilt": {
+    "d": 0.3722,
+    "weight": 0.2386
+  },
+  "shoulder_abduction": {
+    "d": -0.4963,
+    "weight": 0.3182
+  }
+}
