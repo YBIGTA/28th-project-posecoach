@@ -292,7 +292,7 @@ if start_analysis and can_proceed:
                 smoothed = smoother.smooth(flat)
                 npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
                 phase_metric = extract_phase_metric(npts, exercise_type)
-                current_phase = phase_detector.update(phase_metric) if phase_metric is not None else 'ready'
+                current_phase = phase_detector.update(phase_metric) if phase_metric is not None else phase_detector.phase
                 
                 # ✅ 영상 끝 10프레임이면 강제 종료
                 if i >= total_frames - 10 and counter.is_active:
