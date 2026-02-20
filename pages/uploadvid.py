@@ -269,12 +269,12 @@ if start_analysis and can_proceed:
             img_h, img_w = TARGET_RESOLUTION[1], TARGET_RESOLUTION[0]
             smoother = KeypointSmoother(window=3)
             exercise_type = st.session_state.exercise_type
-            phase_detector = create_phase_detector(exercise_type)
+            phase_detector = create_phase_detector(exercise_type, fps=extract_fps)
             if exercise_type == "푸시업":
-                counter, evaluator = PushUpCounter(), PushUpEvaluator()
+                counter, evaluator = PushUpCounter(fps=extract_fps), PushUpEvaluator()
             else:
                 grip_type = st.session_state.get('grip_type', '오버핸드')
-                counter, evaluator = PullUpCounter(), PullUpEvaluator(grip_type=grip_type)
+                counter, evaluator = PullUpCounter(fps=extract_fps), PullUpEvaluator(grip_type=grip_type)
             
             # ✅ DTW 초기화
             ref_name = "reference_pushup.json" if exercise_type == "푸시업" else "reference_pullup.json"
@@ -294,8 +294,10 @@ if start_analysis and can_proceed:
                 phase_metric = extract_phase_metric(npts, exercise_type)
                 current_phase = phase_detector.update(phase_metric) if phase_metric is not None else phase_detector.phase
                 
-                # ✅ 영상 끝 10프레임이면 강제 종료
-                if i >= total_frames - 10 and counter.is_active:
+                # ✅ 영상 끝: 진행 중 rep 마무리 후 종료
+                if i == total_frames - 1 and counter.is_active:
+                    if len(counter.visited_phases & counter.required_sequence) >= counter.min_required:
+                        counter.count += 1
                     counter.is_active = False
                 
                 # ✅ 핵심 수정: is_active 체크 후 evaluator 실행

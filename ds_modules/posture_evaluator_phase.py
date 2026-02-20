@@ -105,10 +105,12 @@ class PushUpEvaluator:
     def __init__(self, history_size: Optional[int] = None):
         self.history_size = history_size or self.HISTORY_SIZE
         self.waist_y_history = deque(maxlen=self.history_size)
+        self._last_phase = None
 
     def reset(self):
         """평가기 초기화"""
         self.waist_y_history.clear()
+        self._last_phase = None
 
     # ── 내부 유틸 ──────────────────────────────────────
     @staticmethod
@@ -143,6 +145,11 @@ class PushUpEvaluator:
         """
         if npts is None:
             return {"score": 0.0, "errors": ["키포인트 없음"], "details": {}, "weights_used": {}}
+
+        # rep 경계(top 재진입) 시 가슴 이동 히스토리 리셋
+        if phase == 'top' and self._last_phase != 'top':
+            self.waist_y_history.clear()
+        self._last_phase = phase
 
         if phase == 'top':
             return self._evaluate_top(npts)
@@ -473,10 +480,12 @@ class PullUpEvaluator:
         self.grip_type = grip_type
         self.elbow_flare_ratio = self._GRIP_ELBOW_FLARE.get(grip_type, self.ELBOW_FLARE_RATIO)
         self.waist_x_history = deque(maxlen=self.history_size)
+        self._last_phase = None
 
     def reset(self):
         """평가기 초기화"""
         self.waist_x_history.clear()
+        self._last_phase = None
 
     # ── 내부 유틸 ──────────────────────────────────────
     @staticmethod
@@ -511,6 +520,11 @@ class PullUpEvaluator:
         """
         if npts is None:
             return {"score": 0.0, "errors": ["키포인트 없음"], "details": {}, "weights_used": {}}
+
+        # rep 경계(bottom 재진입) 시 흔들림 히스토리 리셋
+        if phase == 'bottom' and self._last_phase != 'bottom':
+            self.waist_x_history.clear()
+        self._last_phase = phase
 
         if phase == 'bottom':
             return self._evaluate_bottom(npts)
