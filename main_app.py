@@ -24,7 +24,7 @@ if 'uploaded_video' not in st.session_state:
     st.session_state.uploaded_video = None
     
 if 'extract_fps' not in st.session_state:
-    st.session_state.extract_fps = 2
+    st.session_state.extract_fps = 10
     
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None

@@ -11,8 +11,8 @@ class ExerciseCounter:
         self.is_active = False
         self.inactive_frames = 0
 
-        self.active_threshold = 10
-        self.inactive_threshold = 6
+        self.active_threshold = 4
+        self.inactive_threshold = 10
 
     def update(self, npts, current_phase=None):
         raise NotImplementedError
@@ -63,10 +63,10 @@ class PushUpCounter(ExerciseCounter):
         avg_arm, wrist_y, knee_y = self._compute_metrics(npts)
 
         if not self.is_active:
-            if wrist_y > knee_y and avg_arm > 160:
+            if wrist_y > knee_y and avg_arm > 140:
                 self.ready_frames += 1
             else:
-                self.ready_frames = 0
+                self.ready_frames = max(0, self.ready_frames - 1)
 
             if self.ready_frames > self.active_threshold:
                 self.is_active = True
@@ -76,7 +76,7 @@ class PushUpCounter(ExerciseCounter):
                 self._count_gate_phase = None
             return self.count
 
-        is_exercise_pose = wrist_y > (knee_y - 0.03)
+        is_exercise_pose = wrist_y > (knee_y - 0.08)
         if is_exercise_pose:
             self.inactive_frames = 0
         else:
@@ -142,10 +142,10 @@ class PullUpCounter(ExerciseCounter):
         wrist_y, shoulder_y, nose_y = self._compute_metrics(npts)
 
         if not self.is_active:
-            if wrist_y < shoulder_y:
+            if wrist_y < shoulder_y + 0.05:
                 self.ready_frames += 1
             else:
-                self.ready_frames = 0
+                self.ready_frames = max(0, self.ready_frames - 1)
 
             if self.ready_frames > self.active_threshold:
                 self.is_active = True
@@ -155,7 +155,7 @@ class PullUpCounter(ExerciseCounter):
                 self._count_gate_phase = None
             return self.count
 
-        is_exercise_pose = wrist_y < (shoulder_y + 0.06)
+        is_exercise_pose = wrist_y < (shoulder_y + 0.12)
         if is_exercise_pose:
             self.inactive_frames = 0
         else:

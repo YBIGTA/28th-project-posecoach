@@ -39,11 +39,11 @@ class PushUpPhaseDetector(PhaseDetector):
     """푸시업 Phase 감지기 (팔꿈치 각도 기반)"""
     
     # 히스테리시스 임계값
-    TOP_ENTER = 165    # top 진입 (팔 펴짐)
-    TOP_EXIT = 155     # top 탈출
-    BOTTOM_ENTER = 95  # bottom 진입 (팔 굽힘)
-    BOTTOM_EXIT = 110  # bottom 탈출
-    VEL_THRESHOLD = 1.5   # 속도 임계값 (도/프레임)
+    TOP_ENTER = 150    # top 진입 (팔 펴짐)
+    TOP_EXIT = 140     # top 탈출
+    BOTTOM_ENTER = 110 # bottom 진입 (팔 굽힘)
+    BOTTOM_EXIT = 120  # bottom 탈출
+    VEL_THRESHOLD = 0.8   # 속도 임계값 (도/프레임)
     MIN_FRAMES = 1        # 최소 체류 프레임
     
     def __init__(self):
@@ -76,19 +76,19 @@ class PushUpPhaseDetector(PhaseDetector):
                 self.phase = 'descending'
         
         elif self.phase == 'descending':
-            if avg_arm_angle < self.BOTTOM_ENTER and abs(avg_velocity) < self.VEL_THRESHOLD:
+            if avg_arm_angle < self.BOTTOM_ENTER:
                 self.phase = 'bottom'
             elif avg_velocity > self.VEL_THRESHOLD:
                 self.phase = 'ascending'
-        
+
         elif self.phase == 'bottom':
-            if (avg_arm_angle > self.BOTTOM_EXIT 
-                and avg_velocity > self.VEL_THRESHOLD 
+            if (avg_arm_angle > self.BOTTOM_EXIT
+                and avg_velocity > self.VEL_THRESHOLD
                 and self.frames_in_phase >= self.MIN_FRAMES):
                 self.phase = 'ascending'
-        
+
         elif self.phase == 'ascending':
-            if avg_arm_angle > self.TOP_ENTER and abs(avg_velocity) < self.VEL_THRESHOLD:
+            if avg_arm_angle > self.TOP_ENTER:
                 self.phase = 'top'
             elif avg_velocity < -self.VEL_THRESHOLD:
                 self.phase = 'descending'
@@ -103,12 +103,12 @@ class PushUpPhaseDetector(PhaseDetector):
 class PullUpPhaseDetector(PhaseDetector):
     """풀업 Phase 감지기 (팔꿈치 각도 기반 - 문헌 표준)"""
     
-    BOTTOM_ENTER = 165
-    BOTTOM_EXIT = 155
-    TOP_ENTER = 85
-    TOP_EXIT = 100
-    VEL_THRESHOLD = 2.0
-    MIN_FRAMES = 2
+    BOTTOM_ENTER = 150
+    BOTTOM_EXIT = 140
+    TOP_ENTER = 100
+    TOP_EXIT = 110
+    VEL_THRESHOLD = 1.0
+    MIN_FRAMES = 1
     
     def __init__(self):
         super().__init__()
@@ -140,19 +140,19 @@ class PullUpPhaseDetector(PhaseDetector):
                 self.phase = 'ascending'
         
         elif self.phase == 'ascending':
-            if avg_elbow_angle < self.TOP_ENTER and abs(avg_velocity) < self.VEL_THRESHOLD:
+            if avg_elbow_angle < self.TOP_ENTER:
                 self.phase = 'top'
             elif avg_velocity > self.VEL_THRESHOLD:
                 self.phase = 'descending'
-        
+
         elif self.phase == 'top':
-            if (avg_elbow_angle > self.TOP_EXIT 
-                and avg_velocity > self.VEL_THRESHOLD 
+            if (avg_elbow_angle > self.TOP_EXIT
+                and avg_velocity > self.VEL_THRESHOLD
                 and self.frames_in_phase >= self.MIN_FRAMES):
                 self.phase = 'descending'
-        
+
         elif self.phase == 'descending':
-            if avg_elbow_angle > self.BOTTOM_ENTER and abs(avg_velocity) < self.VEL_THRESHOLD:
+            if avg_elbow_angle > self.BOTTOM_ENTER:
                 self.phase = 'bottom'
             elif avg_velocity < -self.VEL_THRESHOLD:
                 self.phase = 'ascending'

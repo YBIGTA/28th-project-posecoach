@@ -16,12 +16,10 @@ def get_base64_image(img_path):
     return base64.b64encode(data).decode()
 
 # 배경 이미지 경로 (수정 가능)
-from pathlib import Path
-
 BASE_DIR = Path(__file__).resolve().parent
 BG_IMAGE = BASE_DIR.parent / "assets" / "hero.png"
 
-bg_base64 = get_base64_image(BG_IMAGE)
+bg_base64 = get_base64_image(BG_IMAGE) if BG_IMAGE.exists() else ""
 
 # ---------- Custom CSS ----------
 st.markdown(f"""

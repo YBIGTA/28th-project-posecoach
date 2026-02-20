@@ -31,7 +31,7 @@ def _mid(p1, p2):
     return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2]
 
 
-def compute_virtual_keypoints(pts):
+def compute_virtual_keypoints(pts, min_confidence=0.3):
     """
     COCO 17 키포인트 dict → 가상 키포인트를 추가한 확장 dict를 반환한다.
 
@@ -42,13 +42,22 @@ def compute_virtual_keypoints(pts):
 
     Args:
         pts: {"Nose": {"x":..,"y":..,"vis":..}, ...}  (COCO 17)
+        min_confidence: 핵심 키포인트의 최소 신뢰도. 미달 시 None 반환.
 
     Returns:
         {"Nose": [x, y], "Left Shoulder": [x, y], ..., "Neck": [x, y], ...}
         좌표만 [x, y] 리스트로 통일 (규칙 계산용)
+        핵심 키포인트 신뢰도 미달 시 None
     """
     if pts is None:
         return None
+
+    # 핵심 키포인트 신뢰도 필터링
+    _CORE_KEYPOINTS = ["Left Shoulder", "Right Shoulder", "Left Hip", "Right Hip"]
+    for kp_name in _CORE_KEYPOINTS:
+        pt = pts.get(kp_name)
+        if pt is None or pt.get("vis", 0) < min_confidence:
+            return None
 
     flat = {}
     for name, pt in pts.items():

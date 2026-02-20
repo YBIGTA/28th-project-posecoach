@@ -1,18 +1,18 @@
 """
 운동 영상 분석 결과 대시보드 (Phase 기반)
-app_phase.py에서 생성한 분석 결과를 시각화합니다.
+uploadvid.py에서 생성한 분석 결과를 시각화합니다.
 """
 import streamlit as st
 import pandas as pd
 import json
 import cv2
+import plotly.express as px  # ✅ Plotly 추가됨
 from pathlib import Path
 import sys
 
 # ---------- 1. 경로 설정 ----------
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "preprocess" / "scripts"))
 
 from utils.visualization import draw_skeleton_on_frame
 
@@ -45,12 +45,29 @@ st.markdown("""
         padding-left: 15px;
     }
 
+    /* ✅ 수정된 카드 UI (그라데이션, 그림자, 호버 효과) */
     .metric-container {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+        border: 1px solid rgba(231, 227, 196, 0.15);
         border-radius: 20px;
         padding: 1.5rem;
         text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+    }
+    
+    .metric-container:hover {
+        transform: translateY(-5px);
+        border: 1px solid rgba(231, 227, 196, 0.5);
+        box-shadow: 0 15px 35px rgba(231, 227, 196, 0.1);
+    }
+    
+    .metric-container p {
+        color: #888;
+        font-size: 0.95rem;
+        letter-spacing: 1px;
+        margin-bottom: 5px;
     }
 
     .grade-badge {
@@ -145,7 +162,7 @@ dtw_active = res.get("dtw_active", False)
 
 st.divider()
 
-# 운동 결과 카드
+# ✅ 운동 결과 카드 (이모지 및 레이블 수정됨)
 if dtw_active and dtw_result and dtw_result.get("overall_dtw_score") is not None:
     # DTW 활성화된 경우
     dtw_score = dtw_result["overall_dtw_score"]
@@ -153,15 +170,15 @@ if dtw_active and dtw_result and dtw_result.get("overall_dtw_score") is not None
     
     m1, m2, m3, m4, m5 = st.columns(5)
     with m1:
-        st.markdown(f'<div class="metric-container"><p>{res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🔥 {res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
     with m2:
-        st.markdown(f'<div class="metric-container"><p>평균 자세 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🎯 평균 자세 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
     with m3:
-        st.markdown(f'<div class="metric-container"><p>DTW 유사도</p><div class="grade-badge">{dtw_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🧬 폼 유사도 (DTW)</p><div class="grade-badge">{dtw_score:.0%}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-container"><p>종합 점수</p><div class="grade-badge">{combined_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🏆 종합 점수</p><div class="grade-badge">{combined_score:.0%}</div></div>', unsafe_allow_html=True)
     with m5:
-        st.markdown(f'<div class="metric-container"><p>최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>✨ 최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
     
     # Phase별 DTW 점수
     phase_dtw = dtw_result.get("phase_dtw_scores", {})
@@ -187,11 +204,11 @@ else:
     # DTW 없는 경우
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.markdown(f'<div class="metric-container"><p>{res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🔥 {res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
     with m2:
-        st.markdown(f'<div class="metric-container"><p>평균 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🎯 평균 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
     with m3:
-        st.markdown(f'<div class="metric-container"><p>최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>✨ 최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
 
 st.divider()
 
@@ -204,24 +221,33 @@ chart_df = pd.DataFrame({
     "Phase": [fs["phase"] for fs in frame_scores],
 })
 
-# 프레임별 점수 차트
-st.markdown('<div class="chart-box"><b>📊 프레임별 자세 점수 (Phase 흐름)</b>', unsafe_allow_html=True)
-st.line_chart(chart_df, x="프레임", y="점수", color="#e7e3c4")
+# ✅ 프레임별 점수 차트 (Plotly 적용됨)
+st.markdown('<div class="chart-box"><b>📊 프레임별 자세 점수 흐름</b>', unsafe_allow_html=True)
+fig_line = px.line(chart_df, x="프레임", y="점수", color="Phase", color_discrete_sequence=px.colors.qualitative.Pastel)
+fig_line.update_layout(
+    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#e7e3c4",
+    margin=dict(l=0, r=0, t=30, b=0), xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.1)")
+)
+st.plotly_chart(fig_line, use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Phase 분포 및 평균 점수
+# ✅ Phase 분포 및 평균 점수 (Plotly 적용됨)
 c_left, c_right = st.columns(2)
 
 with c_left:
     st.markdown('<div class="chart-box"><b>⏱️ Phase 분포 (프레임 수)</b>', unsafe_allow_html=True)
-    phase_counts = chart_df["Phase"].value_counts()
-    st.bar_chart(phase_counts, color="#e7e3c4")
+    phase_counts = chart_df["Phase"].value_counts().reset_index()
+    fig_bar1 = px.bar(phase_counts, x="Phase", y="count", color_discrete_sequence=["#e7e3c4"])
+    fig_bar1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#e7e3c4", margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig_bar1, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 with c_right:
     st.markdown('<div class="chart-box"><b>🎯 Phase별 평균 자세 점수</b>', unsafe_allow_html=True)
-    phase_avg_scores = chart_df.groupby("Phase")["점수"].mean()
-    st.bar_chart(phase_avg_scores, color="#e7e3c4")
+    phase_avg_scores = chart_df.groupby("Phase")["점수"].mean().reset_index()
+    fig_bar2 = px.bar(phase_avg_scores, x="Phase", y="점수", color_discrete_sequence=["#e7e3c4"])
+    fig_bar2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#e7e3c4", margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig_bar2, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()

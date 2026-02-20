@@ -77,7 +77,7 @@ def select_best_person(result):
 
 def yolo_result_to_dict(result):
     """
-    YOLO 추론 결과를 기존 MediaPipe 호환 딕셔너리로 변환한다.
+    YOLO 추론 결과를 딕셔너리로 변환.
 
     반환 형식: {"Left Shoulder": {"x": 960, "y": 540, "z": 0.0, "vis": 0.95}, ...}
 
