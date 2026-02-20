@@ -169,6 +169,7 @@ if start_analysis and can_proceed:
         from video_preprocess import extract_frames
         from extract_yolo_frames import process_single_frame
         from utils.keypoints import load_pose_model
+        from utils.activity_segment import detect_active_frame_indices, resolve_activity_model_path
         from ds_modules import compute_virtual_keypoints, normalize_pts, KeypointSmoother, PushUpCounter, PullUpCounter
         from ds_modules.phase_detector import create_phase_detector, extract_phase_metric
         from ds_modules.posture_evaluator_phase import PushUpEvaluator, PullUpEvaluator
@@ -265,6 +266,19 @@ if start_analysis and can_proceed:
             
             frame_scores, error_frames = [], []
             total_frames = len(all_keypoints)  # ✅ 총 프레임 수
+            use_ml_filter = True
+            exercise_tag = "pushup" if isinstance(counter, PushUpCounter) else "pullup"
+            model_path = resolve_activity_model_path(exercise_tag)
+            active_frame_indices, filter_meta = detect_active_frame_indices(
+                frame_files,
+                extract_fps=extract_fps,
+                use_ml=use_ml_filter,
+                model_path=model_path,
+                return_details=True,
+            )
+            if not active_frame_indices:
+                active_frame_indices = set(range(total_frames))
+                filter_meta = {"method": "fallback_all", "reason": "no active frames selected"}
             
             # ✅ 수정된 부분: counter.update 호출 방식 변경
             for i, kp_data in enumerate(all_keypoints):
@@ -280,7 +294,7 @@ if start_analysis and can_proceed:
                     counter.is_active = False
                 
                 # ✅ 핵심 수정: is_active 체크 후 evaluator 실행
-                if counter.is_active:
+                if counter.is_active and i in active_frame_indices:
                     res = evaluator.evaluate(npts, phase=current_phase)
                     
                     # DTW 피처 축적
@@ -327,6 +341,10 @@ if start_analysis and can_proceed:
             "fps": extract_fps, 
             "keypoints": all_keypoints, 
             "total_frames": len(frame_files), 
+            "analysis_target_frames": len(active_frame_indices),
+            "filter_method": filter_meta.get("method", ""),
+            "filter_reason": filter_meta.get("reason", ""),
+            "filter_model_path": str(model_path),
             "success_count": success_count,
             "resolution": list(TARGET_RESOLUTION),
             "dtw_result": dtw_result,

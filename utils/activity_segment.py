@@ -8,7 +8,43 @@ import cv2
 import numpy as np
 
 
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[1] / "data" / "models" / "activity_filter.pkl"
+_ROOT = Path(__file__).resolve().parents[1]
+_MODEL_DIR = _ROOT / "data" / "models"
+_DEFAULT_MODEL_IN_DATA = _ROOT / "data" / "models" / "activity_filter.pkl"
+_DEFAULT_MODEL_IN_ROOT = _ROOT / "activity_filter.pkl"
+DEFAULT_MODEL_PATH = _DEFAULT_MODEL_IN_DATA if _DEFAULT_MODEL_IN_DATA.exists() else _DEFAULT_MODEL_IN_ROOT
+
+_PUSHUP_MODEL_CANDIDATES = (
+    "activity_filter_pushup.pkl",
+    "pushup_activity_filter.pkl",
+)
+_PULLUP_MODEL_CANDIDATES = (
+    "activity_filter_pullup.pkl",
+    "pullup_activity_filter.pkl",
+)
+
+
+def resolve_activity_model_path(exercise_tag=None):
+    """
+    Resolve exercise-specific activity-filter model path when available.
+    Falls back to DEFAULT_MODEL_PATH if no matching file exists.
+    """
+    tag = str(exercise_tag or "").strip().lower()
+    candidates = ()
+    if tag == "pushup":
+        candidates = _PUSHUP_MODEL_CANDIDATES
+    elif tag == "pullup":
+        candidates = _PULLUP_MODEL_CANDIDATES
+
+    for name in candidates:
+        path_in_model_dir = _MODEL_DIR / name
+        if path_in_model_dir.exists():
+            return path_in_model_dir
+        path_in_root = _ROOT / name
+        if path_in_root.exists():
+            return path_in_root
+
+    return DEFAULT_MODEL_PATH
 
 
 def _safe_imread(path, flags):

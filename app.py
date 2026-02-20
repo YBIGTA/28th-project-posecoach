@@ -25,6 +25,7 @@ from video_preprocess import extract_frames
 from extract_yolo_frames import process_single_frame
 from utils.keypoints import load_pose_model, COCO_KEYPOINT_MAP
 from utils.visualization import draw_skeleton_on_frame
+from utils.activity_segment import detect_active_frame_indices, resolve_activity_model_path
 
 # 필요한 모듈들을 모두 가져옵니다. (없으면 ds_modules/__init__.py에 추가하거나 직접 파일에서 import)
 from ds_modules import (
@@ -155,6 +156,19 @@ if uploaded is not None:
 
         frame_scores = []
         error_frames = []
+        use_ml_filter = True
+        exercise_tag = "pushup" if isinstance(counter, PushUpCounter) else "pullup"
+        model_path = resolve_activity_model_path(exercise_tag)
+        active_frame_indices, filter_meta = detect_active_frame_indices(
+            frame_files,
+            extract_fps=extract_fps,
+            use_ml=use_ml_filter,
+            model_path=model_path,
+            return_details=True,
+        )
+        if not active_frame_indices:
+            active_frame_indices = set(range(len(frame_files)))
+            filter_meta = {"method": "fallback_all", "reason": "no active frames selected"}
 
         for i, kp_data in enumerate(all_keypoints):
             pts = kp_data["pts"]
@@ -169,7 +183,7 @@ if uploaded is not None:
             # 2. 상태에 따른 처리 (Active일 때만 평가)
             status_text = "준비 중..."
             
-            if counter.is_active:
+            if counter.is_active and i in active_frame_indices:
                 status_text = f"운동 중 (Count: {counter.count})"
                 
                 # 자세 평가 실행
@@ -213,6 +227,10 @@ if uploaded is not None:
             "video_name": video_stem,
             "exercise_type": exercise_type,
             "total_frames": len(frame_files),
+            "analysis_target_frames": len(active_frame_indices),
+            "filter_method": filter_meta.get("method", ""),
+            "filter_reason": filter_meta.get("reason", ""),
+            "filter_model_path": str(model_path),
             "success_count": success_count,
             "fps": extract_fps,
             "resolution": list(TARGET_RESOLUTION),
