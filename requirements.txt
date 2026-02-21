@@ -9,3 +9,6 @@ bcrypt
 plotly
 python-dotenv
 requests
+fastapi
+uvicorn
+python-multipart

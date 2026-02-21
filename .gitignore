@@ -9,7 +9,7 @@ preprocess/data/
 *.mov
 *.mkv
 *.webm
-
+*.jpg
 # 분석 결과 JSON
 *_analysis_phase*.json
 
@@ -17,3 +17,8 @@ preprocess/data/
 ds_modules/reference_*.json
 
 assets
+
+# Web frontend artifacts
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.env
