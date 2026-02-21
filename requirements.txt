@@ -4,4 +4,9 @@ ultralytics>=8.3.0
 numpy
 pandas
 scipy
-fastdtw>=0.6.0
+fastdtw>=0.3.4
+scikit-learn
+joblib
+tqdm
+mediapipe
+reportlab

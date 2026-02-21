@@ -398,6 +398,100 @@ def _ml_based_indices(
     return selected, ""
 
 
+def apply_pullup_rule_first_filter(
+    npts_sequence,
+    ml_selected_indices,
+    on_frames=2,
+    off_frames=2,
+    active_margin=0.03,
+    rest_margin=0.12,
+    min_keep_ratio=0.05,
+):
+    """
+    Pull-up 전용 하이브리드 필터.
+    1) 규칙(state machine)으로 명확한 active/rest를 우선 판정
+    2) 규칙이 애매한 구간만 ML 선택 결과로 fallback
+    """
+    n = len(npts_sequence)
+    if n == 0:
+        return set(), {
+            "rule_applied": True,
+            "rule_active_frames": 0,
+            "rule_rest_frames": 0,
+            "ml_fallback_frames": 0,
+            "reason": "no input frames",
+        }
+
+    ml_set = set(ml_selected_indices or set())
+    selected = set()
+
+    state = "unknown"
+    on_streak = 0
+    off_streak = 0
+    rule_active_frames = 0
+    rule_rest_frames = 0
+    ml_fallback_frames = 0
+
+    for idx, npts in enumerate(npts_sequence):
+        active_signal = False
+        rest_signal = False
+        if npts is None:
+            rest_signal = True
+        else:
+            try:
+                wrist_y = (npts["Left Wrist"][1] + npts["Right Wrist"][1]) / 2.0
+                shoulder_y = (npts["Left Shoulder"][1] + npts["Right Shoulder"][1]) / 2.0
+                active_signal = wrist_y <= (shoulder_y + active_margin)
+                rest_signal = wrist_y >= (shoulder_y + rest_margin)
+            except Exception:
+                # 키포인트가 불완전하면 규칙 판정을 보류하고 ML로 fallback
+                active_signal = False
+                rest_signal = False
+
+        if active_signal:
+            on_streak += 1
+            off_streak = 0
+        elif rest_signal:
+            off_streak += 1
+            on_streak = 0
+        else:
+            # 애매한 프레임에서 상태 흔들림을 줄이기 위해 완만히 감쇠
+            on_streak = max(0, on_streak - 1)
+            off_streak = max(0, off_streak - 1)
+
+        if on_streak >= on_frames:
+            state = "active"
+        elif off_streak >= off_frames:
+            state = "rest"
+
+        if state == "active":
+            selected.add(idx)
+            rule_active_frames += 1
+        elif state == "rest":
+            rule_rest_frames += 1
+        else:
+            if idx in ml_set:
+                selected.add(idx)
+                ml_fallback_frames += 1
+
+    min_keep = max(1, int(np.ceil(n * min_keep_ratio)))
+    if len(selected) < min_keep:
+        # 규칙이 과도하게 보수적인 경우 ML 결과로 복귀
+        selected = set(ml_set)
+        reason = "rule too strict; fell back to ml set"
+    else:
+        reason = ""
+
+    details = {
+        "rule_applied": True,
+        "rule_active_frames": int(rule_active_frames),
+        "rule_rest_frames": int(rule_rest_frames),
+        "ml_fallback_frames": int(ml_fallback_frames),
+        "reason": reason,
+    }
+    return selected, details
+
+
 def detect_active_frame_indices(
     frame_files,
     extract_fps,

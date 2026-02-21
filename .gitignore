@@ -10,6 +10,7 @@ preprocess/data/
 *.mkv
 *.webm
 
+*.jpg
 # 분석 결과 JSON
 *_analysis_phase*.json
 

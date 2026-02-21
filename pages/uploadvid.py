@@ -274,6 +274,7 @@ if start_analysis and can_proceed:
                 extract_fps=extract_fps,
                 use_ml=use_ml_filter,
                 model_path=model_path,
+                min_keep_ratio=0.35,
                 return_details=True,
             )
             if not active_frame_indices:
