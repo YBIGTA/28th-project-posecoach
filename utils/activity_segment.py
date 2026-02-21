@@ -459,10 +459,10 @@ def apply_pullup_rule_first_filter(
             on_streak = max(0, on_streak - 1)
             off_streak = max(0, off_streak - 1)
 
-        if on_streak >= on_frames:
-            state = "active"
-        elif off_streak >= off_frames:
+        if off_streak >= off_frames:
             state = "rest"
+        elif on_streak >= on_frames:
+            state = "active"
 
         if state == "active":
             selected.add(idx)
@@ -477,6 +477,142 @@ def apply_pullup_rule_first_filter(
     min_keep = max(1, int(np.ceil(n * min_keep_ratio)))
     if len(selected) < min_keep:
         # 규칙이 과도하게 보수적인 경우 ML 결과로 복귀
+        selected = set(ml_set)
+        reason = "rule too strict; fell back to ml set"
+    else:
+        reason = ""
+
+    details = {
+        "rule_applied": True,
+        "rule_active_frames": int(rule_active_frames),
+        "rule_rest_frames": int(rule_rest_frames),
+        "ml_fallback_frames": int(ml_fallback_frames),
+        "reason": reason,
+    }
+    return selected, details
+
+
+def _joint_angle(a, b, c):
+    """Return angle ABC in degrees."""
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
+    c = np.asarray(c, dtype=np.float32)
+    ba = a - b
+    bc = c - b
+    norm_ba = np.linalg.norm(ba)
+    norm_bc = np.linalg.norm(bc)
+    if norm_ba < 1e-8 or norm_bc < 1e-8:
+        return 180.0
+    cos_val = float(np.clip(np.dot(ba, bc) / (norm_ba * norm_bc), -1.0, 1.0))
+    return float(np.degrees(np.arccos(cos_val)))
+
+
+def apply_pushup_rule_first_filter(
+    npts_sequence,
+    phase_sequence,
+    ml_selected_indices,
+    on_frames=2,
+    off_frames=4,
+    hold_frames=12,
+    still_top_frames=12,
+    motion_eps_deg=1.5,
+    min_keep_ratio=0.05,
+):
+    """
+    Push-up specific hybrid filter.
+    1) Rule-based temporal state machine classifies active/rest first.
+    2) ML selection is used only when rule state is still ambiguous.
+    """
+    n = len(npts_sequence)
+    if n == 0:
+        return set(), {
+            "rule_applied": True,
+            "rule_active_frames": 0,
+            "rule_rest_frames": 0,
+            "ml_fallback_frames": 0,
+            "reason": "no input frames",
+        }
+
+    if not phase_sequence or len(phase_sequence) != n:
+        phase_sequence = ["ready"] * n
+
+    ml_set = set(ml_selected_indices or set())
+    selected = set()
+
+    state = "unknown"
+    on_streak = 0
+    off_streak = 0
+    active_hold = 0
+    still_top_streak = 0
+    prev_elbow_angle = None
+
+    rule_active_frames = 0
+    rule_rest_frames = 0
+    ml_fallback_frames = 0
+
+    for idx, (npts, phase) in enumerate(zip(npts_sequence, phase_sequence)):
+        active_signal = False
+        rest_signal = False
+
+        if npts is None:
+            rest_signal = True
+            prev_elbow_angle = None
+            active_hold = max(0, active_hold - 1)
+            still_top_streak = 0
+        else:
+            try:
+                elbow_l = _joint_angle(npts["Left Shoulder"], npts["Left Elbow"], npts["Left Wrist"])
+                elbow_r = _joint_angle(npts["Right Shoulder"], npts["Right Elbow"], npts["Right Wrist"])
+                elbow_angle = (elbow_l + elbow_r) / 2.0
+            except Exception:
+                elbow_angle = prev_elbow_angle if prev_elbow_angle is not None else 180.0
+
+            elbow_delta = abs(elbow_angle - prev_elbow_angle) if prev_elbow_angle is not None else 0.0
+            prev_elbow_angle = elbow_angle
+
+            moving_phase = phase in ("descending", "ascending", "bottom")
+            if moving_phase:
+                active_hold = hold_frames
+            else:
+                active_hold = max(0, active_hold - 1)
+
+            if phase == "top" and elbow_delta <= motion_eps_deg:
+                still_top_streak += 1
+            else:
+                still_top_streak = 0
+
+            active_signal = moving_phase or (active_hold > 0 and phase != "ready")
+            rest_signal = (phase == "ready") or (
+                phase == "top" and still_top_streak >= still_top_frames and active_hold == 0
+            )
+
+        if active_signal and not rest_signal:
+            on_streak += 1
+            off_streak = 0
+        elif rest_signal and not active_signal:
+            off_streak += 1
+            on_streak = 0
+        else:
+            on_streak = max(0, on_streak - 1)
+            off_streak = max(0, off_streak - 1)
+
+        if off_streak >= off_frames:
+            state = "rest"
+        elif on_streak >= on_frames:
+            state = "active"
+
+        if state == "active":
+            selected.add(idx)
+            rule_active_frames += 1
+        elif state == "rest":
+            rule_rest_frames += 1
+        else:
+            if idx in ml_set:
+                selected.add(idx)
+                ml_fallback_frames += 1
+
+    min_keep = max(1, int(np.ceil(n * min_keep_ratio)))
+    if len(selected) < min_keep:
         selected = set(ml_set)
         reason = "rule too strict; fell back to ml set"
     else:

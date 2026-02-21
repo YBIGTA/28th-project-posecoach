@@ -169,7 +169,12 @@ if start_analysis and can_proceed:
         from video_preprocess import extract_frames
         from extract_yolo_frames import process_single_frame
         from utils.keypoints import load_pose_model
-        from utils.activity_segment import detect_active_frame_indices, resolve_activity_model_path
+        from utils.activity_segment import (
+            detect_active_frame_indices,
+            resolve_activity_model_path,
+            apply_pushup_rule_first_filter,
+            apply_pullup_rule_first_filter,
+        )
         from ds_modules import compute_virtual_keypoints, normalize_pts, KeypointSmoother, PushUpCounter, PullUpCounter
         from ds_modules.phase_detector import create_phase_detector, extract_phase_metric
         from ds_modules.posture_evaluator_phase import PushUpEvaluator, PullUpEvaluator
@@ -280,15 +285,45 @@ if start_analysis and can_proceed:
             if not active_frame_indices:
                 active_frame_indices = set(range(total_frames))
                 filter_meta = {"method": "fallback_all", "reason": "no active frames selected"}
+
+            # Build normalized pose/phase sequence once and apply rule-first filtering.
+            npts_sequence = []
+            phase_sequence = []
+            for kp_data in all_keypoints:
+                flat = compute_virtual_keypoints(kp_data["pts"])
+                smoothed = smoother.smooth(flat)
+                npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
+                phase_metric = extract_phase_metric(npts, exercise_type)
+                current_phase = phase_detector.update(phase_metric) if phase_metric is not None else "ready"
+                npts_sequence.append(npts)
+                phase_sequence.append(current_phase)
+
+            if exercise_tag == "pushup":
+                rule_selected, rule_meta = apply_pushup_rule_first_filter(
+                    npts_sequence=npts_sequence,
+                    phase_sequence=phase_sequence,
+                    ml_selected_indices=active_frame_indices,
+                    min_keep_ratio=0.08,
+                )
+            else:
+                rule_selected, rule_meta = apply_pullup_rule_first_filter(
+                    npts_sequence=npts_sequence,
+                    ml_selected_indices=active_frame_indices,
+                    min_keep_ratio=0.08,
+                )
+
+            if rule_selected:
+                active_frame_indices = set(rule_selected)
+                filter_meta = {
+                    "method": f"rule_first_{exercise_tag}_ml_fallback",
+                    "reason": rule_meta.get("reason", ""),
+                }
             
             # ✅ 수정된 부분: counter.update 호출 방식 변경
             for i, kp_data in enumerate(all_keypoints):
                 pts = kp_data["pts"]
-                flat = compute_virtual_keypoints(pts)
-                smoothed = smoother.smooth(flat)
-                npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
-                phase_metric = extract_phase_metric(npts, exercise_type)
-                current_phase = phase_detector.update(phase_metric) if phase_metric is not None else 'ready'
+                npts = npts_sequence[i]
+                current_phase = phase_sequence[i]
                 
                 # Update activity state before evaluation.
                 
