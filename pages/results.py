@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from utils.visualization import draw_skeleton_on_frame
+from db.database import save_workout
+from gemini_feedback import generate_feedback
 
 st.set_page_config(page_title="AI Pose Coach | Analysis Report", page_icon="📊", layout="wide")
 
@@ -101,6 +103,34 @@ st.markdown("""
         font-size: 0.9rem;
         margin-bottom: 10px;
     }
+
+    /* AI 피드백 박스 */
+    .ai-feedback-box {
+        background: linear-gradient(135deg, rgba(231,227,196,0.07) 0%, rgba(100,120,200,0.05) 100%);
+        border: 1px solid rgba(231, 227, 196, 0.25);
+        border-radius: 20px;
+        padding: 2rem 2.5rem;
+        margin: 1rem 0 2rem 0;
+        line-height: 1.8;
+    }
+
+    .ai-feedback-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 1.2rem;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #e7e3c4;
+    }
+
+    .api-key-box {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 1.2rem 1.5rem;
+        margin-bottom: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -114,6 +144,16 @@ res = st.session_state["analysis_results"]
 kp_list = res["keypoints"]
 frame_scores = res.get("frame_scores", [])
 error_frames = res.get("error_frames", [])
+
+# ---------- 3.5 자동 DB 저장 ----------
+user_id = st.session_state.get("user_id")
+if user_id is not None and not st.session_state.get("workout_saved", False):
+    try:
+        workout_id = save_workout(user_id, res)
+        st.session_state["workout_saved"] = True
+        st.session_state["last_workout_id"] = workout_id
+    except Exception as e:
+        st.warning(f"운동 기록 저장 중 오류: {e}")
 
 # ---------- 4. 헤더 ----------
 st.markdown('<div class="report-header"><h1>📊 ANALYSIS REPORT</h1></div>', unsafe_allow_html=True)
@@ -209,6 +249,91 @@ else:
         st.markdown(f'<div class="metric-container"><p>🎯 평균 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
     with m3:
         st.markdown(f'<div class="metric-container"><p>✨ 최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
+
+st.divider()
+
+# ══════════════════════════════════════════════════════════════
+# ---------- 6.5 AI 종합 피드백 (Gemini) ----------
+# ══════════════════════════════════════════════════════════════
+
+st.markdown('<div class="section-label">AI 종합 피드백</div>', unsafe_allow_html=True)
+
+with st.expander("Gemini API 설정", expanded=not st.session_state.get("gemini_api_key", "")):
+    st.markdown('<div class="api-key-box">', unsafe_allow_html=True)
+    api_key_input = st.text_input(
+        "Gemini API Key",
+        value=st.session_state.get("gemini_api_key", ""),
+        type="password",
+        placeholder="AIza...",
+        help="Google AI Studio(https://aistudio.google.com)에서 발급받은 API 키를 입력하세요.",
+    )
+    if api_key_input:
+        st.session_state["gemini_api_key"] = api_key_input
+
+    col_temp, col_tokens = st.columns(2)
+    with col_temp:
+        temperature = st.slider(
+            "Temperature (창의성)",
+            min_value=0.0, max_value=1.0,
+            value=st.session_state.get("gemini_temperature", 0.7),
+            step=0.05,
+            help="높을수록 다양한 표현, 낮을수록 일관된 표현",
+        )
+        st.session_state["gemini_temperature"] = temperature
+    with col_tokens:
+        max_tokens = st.slider(
+            "최대 출력 길이 (토큰)",
+            min_value=300, max_value=6000,
+            value=st.session_state.get("gemini_max_tokens", 6000),
+            step=100,
+        )
+        st.session_state["gemini_max_tokens"] = max_tokens
+    st.markdown('</div>', unsafe_allow_html=True)
+
+feedback_col1, feedback_col2 = st.columns([1, 4])
+with feedback_col1:
+    generate_btn = st.button(
+        "AI 피드백 생성",
+        use_container_width=True,
+        type="primary",
+        disabled=not st.session_state.get("gemini_api_key", ""),
+    )
+with feedback_col2:
+    if not st.session_state.get("gemini_api_key", ""):
+        st.warning("위 설정에서 Gemini API 키를 입력하면 AI 피드백을 받을 수 있습니다.")
+
+if generate_btn:
+    with st.spinner("AI가 자세를 분석하고 피드백을 작성 중입니다..."):
+        try:
+            feedback_text = generate_feedback(
+                analysis_results=res,
+                api_key=st.session_state.get("gemini_api_key"),
+                temperature=st.session_state.get("gemini_temperature", 0.7),
+                max_output_tokens=st.session_state.get("gemini_max_tokens", 6000),
+            )
+            st.session_state["gemini_feedback"] = feedback_text
+        except Exception as e:
+            st.session_state["gemini_feedback"] = None
+            st.error(f"피드백 생성 실패: {e}")
+
+if st.session_state.get("gemini_feedback"):
+    st.markdown('<div class="ai-feedback-box">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="ai-feedback-header">트레이너 AI 종합 피드백</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(st.session_state["gemini_feedback"])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    dl_col1, dl_col2 = st.columns([1, 5])
+    with dl_col1:
+        st.download_button(
+            "피드백 저장",
+            data=st.session_state["gemini_feedback"],
+            file_name=f"{res.get('video_name', 'feedback')}_ai_feedback.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
 
 st.divider()
 
@@ -380,9 +505,10 @@ st.divider()
 # ---------- 10. 하단 액션 ----------
 st.markdown("<br>", unsafe_allow_html=True)
 
-c1, c2, c3 = st.columns(3)
+num_cols = 4 if st.session_state.get("user_id") is not None else 3
+action_cols = st.columns(num_cols)
 
-with c1:
+with action_cols[0]:
     # JSON 다운로드
     export_data = {
         "video": res["video_name"],
@@ -396,6 +522,7 @@ with c1:
         "dtw_result": dtw_result,
         "combined_score": round(avg_score * 0.7 + dtw_result.get("overall_dtw_score", 0) * 0.3, 2) if dtw_active and dtw_result else None,
         "error_frame_count": len(error_frames),
+        "ai_feedback": st.session_state.get("gemini_feedback", None),
         "phase_scores": [
             {
                 "frame_idx": fs["frame_idx"],
@@ -415,16 +542,24 @@ with c1:
         use_container_width=True
     )
 
-with c2:
+with action_cols[1]:
     if st.button("🔄 새로운 영상 분석", use_container_width=True):
-        # session_state 초기화
         if 'analysis_results' in st.session_state:
             del st.session_state['analysis_results']
+        st.session_state.pop("workout_saved", None)
+        st.session_state.pop("gemini_feedback", None)
         st.switch_page("pages/uploadvid.py")
 
-with c3:
+with action_cols[2]:
     if st.button("🏠 처음으로", use_container_width=True):
+        st.session_state.pop("workout_saved", None)
         st.switch_page("pages/home.py")
+
+if st.session_state.get("user_id") is not None:
+    with action_cols[3]:
+        if st.button("📈 운동 기록", use_container_width=True):
+            st.session_state.pop("workout_saved", None)
+            st.switch_page("pages/history.py")
 
 st.markdown(
     '<div style="text-align: center; color: #555; padding: 2rem;">'
