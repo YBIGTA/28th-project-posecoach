@@ -4,4 +4,8 @@ ultralytics>=8.3.0
 numpy
 pandas
 scipy
-fastdtw>=0.6.0
+fastdtw
+bcrypt
+plotly
+python-dotenv
+requests

@@ -62,14 +62,20 @@ def extract_pushup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
 
 def extract_pullup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
     """
-    풀업 관절 각도 피처 4개를 추출한다. (0~1 정규화)
+    풀업 관절 각도 피처 7개를 추출한다. (0~1 정규화)
 
+    - elbow_l, elbow_r: 좌/우 팔꿈치 각도 (풀업 위치의 핵심 지표)
+    - back: 등(Neck-Waist-Ankle) 각도
     - head_tilt: 고개 숙임
     - shoulder_packing: 어깨 패킹 (shoulder_mid_y - neck_y)
     - elbow_flare: 팔꿈치 벌림 비율 (elbow_dist / shoulder_dist)
     - body_sway: waist_x (흔들림 추적용 단일값)
     """
     try:
+        elbow_l = cal_angle(npts["Left Shoulder"], npts["Left Elbow"], npts["Left Wrist"])
+        elbow_r = cal_angle(npts["Right Shoulder"], npts["Right Elbow"], npts["Right Wrist"])
+        back = cal_angle(npts["Neck"], npts["Waist"], npts["Ankle_C"])
+
         eye_nose_y = ((npts["Left Eye"][1] + npts["Right Eye"][1]) / 2 + npts["Nose"][1]) / 2
         ear_y = (npts["Left Ear"][1] + npts["Right Ear"][1]) / 2
         head_tilt = eye_nose_y - ear_y
@@ -81,12 +87,14 @@ def extract_pullup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
         elbow_dist = cal_distance(npts["Left Elbow"], npts["Right Elbow"])
         shoulder_dist = cal_distance(npts["Left Shoulder"], npts["Right Shoulder"])
         elbow_flare = elbow_dist / shoulder_dist if shoulder_dist > 1e-6 else 0.0
-        # 비율값을 0~1로 클리핑 (일반적으로 0.5~2.0 범위 → /3.0으로 정규화)
         elbow_flare = min(elbow_flare / 3.0, 1.0)
 
         body_sway = npts["Waist"][0]
 
         return np.array([
+            elbow_l / 180.0,
+            elbow_r / 180.0,
+            back / 180.0,
             head_tilt,
             shoulder_packing,
             elbow_flare,
@@ -125,8 +133,9 @@ def extract_coordinates(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
 def extract_feature_vector(npts: Optional[Dict[str, List[float]]], exercise_type: str) -> Optional[np.ndarray]:
     """
     각도 + 좌표를 합친 피처 벡터를 반환한다.
+    각도가 벡터 앞쪽에 위치하므로 DTW 비교 시 각도만 슬라이싱 가능.
     - 푸시업: 7(각도) + 40(좌표) = 47차원
-    - 풀업: 4(각도) + 40(좌표) = 44차원
+    - 풀업: 7(각도) + 40(좌표) = 47차원
     """
     if npts is None:
         return None
@@ -160,7 +169,10 @@ class DTWScorer:
         result = scorer.finalize()
     """
 
-    def __init__(self, reference_path: str, exercise_type: str, sigma: float = 0.5):
+    # 각도 피처 차원 수 (각도만으로 DTW 비교)
+    _ANGLE_DIMS = {"푸시업": 7, "풀업": 7}
+
+    def __init__(self, reference_path: str, exercise_type: str, sigma: float = 0.25):
         self.exercise_type = exercise_type
         self.sigma = sigma
         self.active = False
@@ -207,7 +219,11 @@ class DTWScorer:
             self._current_segment.append(feature_vec)
 
     def _score_segment(self, phase: str):
-        """fastdtw로 세그먼트 거리 계산 → 가우시안 유사도 변환"""
+        """fastdtw로 세그먼트 거리 계산 → 가우시안 유사도 변환
+
+        각도 피처만 사용하여 폼 품질을 비교한다.
+        좌표는 카메라 위치에 의존하므로 DTW 비교에서 제외.
+        """
         if phase not in self.reference or not self.reference[phase]:
             return
         if len(self._current_segment) < 2:
@@ -217,20 +233,18 @@ class DTWScorer:
             from fastdtw import fastdtw
             from scipy.spatial.distance import euclidean
 
-            user_seq = self._current_segment
-            ref_seq = self.reference[phase]
+            # 각도 피처만 슬라이싱 (벡터 앞쪽 N차원)
+            n_angles = self._ANGLE_DIMS.get(self.exercise_type, 7)
+            user_seq = [v[:n_angles] for v in self._current_segment]
+            ref_seq = [v[:n_angles] for v in self.reference[phase]]
 
             distance, _ = fastdtw(user_seq, ref_seq, radius=1, dist=euclidean)
 
             # 평균 거리 = 총 거리 / max(두 시퀀스 길이)
             avg_distance = distance / max(len(user_seq), len(ref_seq))
 
-            # 차원별 평균 거리로 정규화 (다차원 유클리드 보정)
-            dim = len(user_seq[0]) if user_seq else 1
-            normalized_distance = avg_distance / np.sqrt(dim)
-
             # 가우시안 커널: similarity = exp(-(d/σ)²)
-            similarity = np.exp(-(normalized_distance / self.sigma) ** 2)
+            similarity = np.exp(-(avg_distance / self.sigma) ** 2)
 
             self._phase_scores[phase].append(float(similarity))
             logger.debug(f"DTW [{phase}] dist={distance:.2f}, avg={avg_distance:.4f}, "

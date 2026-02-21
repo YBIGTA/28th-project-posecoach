@@ -1,20 +1,22 @@
 """
 운동 영상 분석 결과 대시보드 (Phase 기반)
-app_phase.py에서 생성한 분석 결과를 시각화합니다.
+uploadvid.py에서 생성한 분석 결과를 시각화합니다.
 """
 import streamlit as st
 import pandas as pd
 import json
 import cv2
+import plotly.express as px  # ✅ Plotly 추가됨
 from pathlib import Path
 import sys
 
 # ---------- 1. 경로 설정 ----------
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "preprocess" / "scripts"))
 
 from utils.visualization import draw_skeleton_on_frame
+from db.database import save_workout
+from gemini_feedback import generate_feedback
 
 st.set_page_config(page_title="AI Pose Coach | Analysis Report", page_icon="📊", layout="wide")
 
@@ -45,12 +47,29 @@ st.markdown("""
         padding-left: 15px;
     }
 
+    /* ✅ 수정된 카드 UI (그라데이션, 그림자, 호버 효과) */
     .metric-container {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+        border: 1px solid rgba(231, 227, 196, 0.15);
         border-radius: 20px;
         padding: 1.5rem;
         text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+    }
+    
+    .metric-container:hover {
+        transform: translateY(-5px);
+        border: 1px solid rgba(231, 227, 196, 0.5);
+        box-shadow: 0 15px 35px rgba(231, 227, 196, 0.1);
+    }
+    
+    .metric-container p {
+        color: #888;
+        font-size: 0.95rem;
+        letter-spacing: 1px;
+        margin-bottom: 5px;
     }
 
     .grade-badge {
@@ -84,6 +103,34 @@ st.markdown("""
         font-size: 0.9rem;
         margin-bottom: 10px;
     }
+
+    /* AI 피드백 박스 */
+    .ai-feedback-box {
+        background: linear-gradient(135deg, rgba(231,227,196,0.07) 0%, rgba(100,120,200,0.05) 100%);
+        border: 1px solid rgba(231, 227, 196, 0.25);
+        border-radius: 20px;
+        padding: 2rem 2.5rem;
+        margin: 1rem 0 2rem 0;
+        line-height: 1.8;
+    }
+
+    .ai-feedback-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 1.2rem;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #e7e3c4;
+    }
+
+    .api-key-box {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 1.2rem 1.5rem;
+        margin-bottom: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -97,6 +144,16 @@ res = st.session_state["analysis_results"]
 kp_list = res["keypoints"]
 frame_scores = res.get("frame_scores", [])
 error_frames = res.get("error_frames", [])
+
+# ---------- 3.5 자동 DB 저장 ----------
+user_id = st.session_state.get("user_id")
+if user_id is not None and not st.session_state.get("workout_saved", False):
+    try:
+        workout_id = save_workout(user_id, res)
+        st.session_state["workout_saved"] = True
+        st.session_state["last_workout_id"] = workout_id
+    except Exception as e:
+        st.warning(f"운동 기록 저장 중 오류: {e}")
 
 # ---------- 4. 헤더 ----------
 st.markdown('<div class="report-header"><h1>📊 ANALYSIS REPORT</h1></div>', unsafe_allow_html=True)
@@ -145,7 +202,7 @@ dtw_active = res.get("dtw_active", False)
 
 st.divider()
 
-# 운동 결과 카드
+# ✅ 운동 결과 카드 (이모지 및 레이블 수정됨)
 if dtw_active and dtw_result and dtw_result.get("overall_dtw_score") is not None:
     # DTW 활성화된 경우
     dtw_score = dtw_result["overall_dtw_score"]
@@ -153,15 +210,15 @@ if dtw_active and dtw_result and dtw_result.get("overall_dtw_score") is not None
     
     m1, m2, m3, m4, m5 = st.columns(5)
     with m1:
-        st.markdown(f'<div class="metric-container"><p>{res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🔥 {res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
     with m2:
-        st.markdown(f'<div class="metric-container"><p>평균 자세 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🎯 평균 자세 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
     with m3:
-        st.markdown(f'<div class="metric-container"><p>DTW 유사도</p><div class="grade-badge">{dtw_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🧬 폼 유사도 (DTW)</p><div class="grade-badge">{dtw_score:.0%}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-container"><p>종합 점수</p><div class="grade-badge">{combined_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🏆 종합 점수</p><div class="grade-badge">{combined_score:.0%}</div></div>', unsafe_allow_html=True)
     with m5:
-        st.markdown(f'<div class="metric-container"><p>최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>✨ 최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
     
     # Phase별 DTW 점수
     phase_dtw = dtw_result.get("phase_dtw_scores", {})
@@ -187,11 +244,96 @@ else:
     # DTW 없는 경우
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.markdown(f'<div class="metric-container"><p>{res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🔥 {res.get("exercise_type")} 횟수</p><div class="grade-badge">{res.get("exercise_count", 0)}회</div></div>', unsafe_allow_html=True)
     with m2:
-        st.markdown(f'<div class="metric-container"><p>평균 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>🎯 평균 점수</p><div class="grade-badge">{avg_score:.0%}</div></div>', unsafe_allow_html=True)
     with m3:
-        st.markdown(f'<div class="metric-container"><p>최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><p>✨ 최종 등급</p><div class="grade-badge" style="color:{color};">{grade}</div></div>', unsafe_allow_html=True)
+
+st.divider()
+
+# ══════════════════════════════════════════════════════════════
+# ---------- 6.5 AI 종합 피드백 (Gemini) ----------
+# ══════════════════════════════════════════════════════════════
+
+st.markdown('<div class="section-label">AI 종합 피드백</div>', unsafe_allow_html=True)
+
+with st.expander("Gemini API 설정", expanded=not st.session_state.get("gemini_api_key", "")):
+    st.markdown('<div class="api-key-box">', unsafe_allow_html=True)
+    api_key_input = st.text_input(
+        "Gemini API Key",
+        value=st.session_state.get("gemini_api_key", ""),
+        type="password",
+        placeholder="AIza...",
+        help="Google AI Studio(https://aistudio.google.com)에서 발급받은 API 키를 입력하세요.",
+    )
+    if api_key_input:
+        st.session_state["gemini_api_key"] = api_key_input
+
+    col_temp, col_tokens = st.columns(2)
+    with col_temp:
+        temperature = st.slider(
+            "Temperature (창의성)",
+            min_value=0.0, max_value=1.0,
+            value=st.session_state.get("gemini_temperature", 0.7),
+            step=0.05,
+            help="높을수록 다양한 표현, 낮을수록 일관된 표현",
+        )
+        st.session_state["gemini_temperature"] = temperature
+    with col_tokens:
+        max_tokens = st.slider(
+            "최대 출력 길이 (토큰)",
+            min_value=300, max_value=6000,
+            value=st.session_state.get("gemini_max_tokens", 6000),
+            step=100,
+        )
+        st.session_state["gemini_max_tokens"] = max_tokens
+    st.markdown('</div>', unsafe_allow_html=True)
+
+feedback_col1, feedback_col2 = st.columns([1, 4])
+with feedback_col1:
+    generate_btn = st.button(
+        "AI 피드백 생성",
+        use_container_width=True,
+        type="primary",
+        disabled=not st.session_state.get("gemini_api_key", ""),
+    )
+with feedback_col2:
+    if not st.session_state.get("gemini_api_key", ""):
+        st.warning("위 설정에서 Gemini API 키를 입력하면 AI 피드백을 받을 수 있습니다.")
+
+if generate_btn:
+    with st.spinner("AI가 자세를 분석하고 피드백을 작성 중입니다..."):
+        try:
+            feedback_text = generate_feedback(
+                analysis_results=res,
+                api_key=st.session_state.get("gemini_api_key"),
+                temperature=st.session_state.get("gemini_temperature", 0.7),
+                max_output_tokens=st.session_state.get("gemini_max_tokens", 6000),
+            )
+            st.session_state["gemini_feedback"] = feedback_text
+        except Exception as e:
+            st.session_state["gemini_feedback"] = None
+            st.error(f"피드백 생성 실패: {e}")
+
+if st.session_state.get("gemini_feedback"):
+    st.markdown('<div class="ai-feedback-box">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="ai-feedback-header">트레이너 AI 종합 피드백</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(st.session_state["gemini_feedback"])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    dl_col1, dl_col2 = st.columns([1, 5])
+    with dl_col1:
+        st.download_button(
+            "피드백 저장",
+            data=st.session_state["gemini_feedback"],
+            file_name=f"{res.get('video_name', 'feedback')}_ai_feedback.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
 
 st.divider()
 
@@ -204,24 +346,33 @@ chart_df = pd.DataFrame({
     "Phase": [fs["phase"] for fs in frame_scores],
 })
 
-# 프레임별 점수 차트
-st.markdown('<div class="chart-box"><b>📊 프레임별 자세 점수 (Phase 흐름)</b>', unsafe_allow_html=True)
-st.line_chart(chart_df, x="프레임", y="점수", color="#e7e3c4")
+# ✅ 프레임별 점수 차트 (Plotly 적용됨)
+st.markdown('<div class="chart-box"><b>📊 프레임별 자세 점수 흐름</b>', unsafe_allow_html=True)
+fig_line = px.line(chart_df, x="프레임", y="점수", color="Phase", color_discrete_sequence=px.colors.qualitative.Pastel)
+fig_line.update_layout(
+    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#e7e3c4",
+    margin=dict(l=0, r=0, t=30, b=0), xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.1)")
+)
+st.plotly_chart(fig_line, use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Phase 분포 및 평균 점수
+# ✅ Phase 분포 및 평균 점수 (Plotly 적용됨)
 c_left, c_right = st.columns(2)
 
 with c_left:
     st.markdown('<div class="chart-box"><b>⏱️ Phase 분포 (프레임 수)</b>', unsafe_allow_html=True)
-    phase_counts = chart_df["Phase"].value_counts()
-    st.bar_chart(phase_counts, color="#e7e3c4")
+    phase_counts = chart_df["Phase"].value_counts().reset_index()
+    fig_bar1 = px.bar(phase_counts, x="Phase", y="count", color_discrete_sequence=["#e7e3c4"])
+    fig_bar1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#e7e3c4", margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig_bar1, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 with c_right:
     st.markdown('<div class="chart-box"><b>🎯 Phase별 평균 자세 점수</b>', unsafe_allow_html=True)
-    phase_avg_scores = chart_df.groupby("Phase")["점수"].mean()
-    st.bar_chart(phase_avg_scores, color="#e7e3c4")
+    phase_avg_scores = chart_df.groupby("Phase")["점수"].mean().reset_index()
+    fig_bar2 = px.bar(phase_avg_scores, x="Phase", y="점수", color_discrete_sequence=["#e7e3c4"])
+    fig_bar2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#e7e3c4", margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig_bar2, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
@@ -354,9 +505,10 @@ st.divider()
 # ---------- 10. 하단 액션 ----------
 st.markdown("<br>", unsafe_allow_html=True)
 
-c1, c2, c3 = st.columns(3)
+num_cols = 4 if st.session_state.get("user_id") is not None else 3
+action_cols = st.columns(num_cols)
 
-with c1:
+with action_cols[0]:
     # JSON 다운로드
     export_data = {
         "video": res["video_name"],
@@ -370,6 +522,7 @@ with c1:
         "dtw_result": dtw_result,
         "combined_score": round(avg_score * 0.7 + dtw_result.get("overall_dtw_score", 0) * 0.3, 2) if dtw_active and dtw_result else None,
         "error_frame_count": len(error_frames),
+        "ai_feedback": st.session_state.get("gemini_feedback", None),
         "phase_scores": [
             {
                 "frame_idx": fs["frame_idx"],
@@ -389,16 +542,24 @@ with c1:
         use_container_width=True
     )
 
-with c2:
+with action_cols[1]:
     if st.button("🔄 새로운 영상 분석", use_container_width=True):
-        # session_state 초기화
         if 'analysis_results' in st.session_state:
             del st.session_state['analysis_results']
+        st.session_state.pop("workout_saved", None)
+        st.session_state.pop("gemini_feedback", None)
         st.switch_page("pages/uploadvid.py")
 
-with c3:
+with action_cols[2]:
     if st.button("🏠 처음으로", use_container_width=True):
+        st.session_state.pop("workout_saved", None)
         st.switch_page("pages/home.py")
+
+if st.session_state.get("user_id") is not None:
+    with action_cols[3]:
+        if st.button("📈 운동 기록", use_container_width=True):
+            st.session_state.pop("workout_saved", None)
+            st.switch_page("pages/history.py")
 
 st.markdown(
     '<div style="text-align: center; color: #555; padding: 2rem;">'

@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "preprocess" / "scripts"))
 
-FRAME_EXTRACT_FPS = 10
 UPLOAD_VIDEO_DIR = ROOT / "data" / "uploads"
 OUT_FRAMES_DIR = ROOT / "data" / "frames"
 TARGET_RESOLUTION = (1920, 1080)
@@ -66,6 +65,22 @@ with col_main:
         if st.button("풀업 선택", key="sel_pull", use_container_width=True):
             st.session_state.exercise_type = '풀업'
             st.rerun()
+
+    # 풀업 그립 선택
+    if current_ex == '풀업':
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="section-title"><span class="section-number">01-1</span> 그립 타입</div>', unsafe_allow_html=True)
+        grip_options = ["오버핸드", "언더핸드", "와이드"]
+        grip_labels = ["🤚 오버핸드 (표준 풀업)", "✊ 언더핸드 (친업)", "🖐️ 와이드 그립"]
+        current_grip = st.session_state.get('grip_type', '오버핸드')
+        grip_cols = st.columns(3)
+        for i, (grip, label) in enumerate(zip(grip_options, grip_labels)):
+            with grip_cols[i]:
+                sel = "selected" if current_grip == grip else ""
+                st.markdown(f'<div class="exercise-option {sel}" style="padding:1rem;"><p>{label}</p></div>', unsafe_allow_html=True)
+                if st.button(f"{grip} 선택", key=f"sel_grip_{grip}", use_container_width=True):
+                    st.session_state.grip_type = grip
+                    st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="section-title"><span class="section-number">02</span> 영상 업로드</div>', unsafe_allow_html=True)
@@ -254,8 +269,12 @@ if start_analysis and can_proceed:
             img_h, img_w = TARGET_RESOLUTION[1], TARGET_RESOLUTION[0]
             smoother = KeypointSmoother(window=3)
             exercise_type = st.session_state.exercise_type
-            phase_detector = create_phase_detector(exercise_type)
-            counter, evaluator = (PushUpCounter(), PushUpEvaluator()) if exercise_type == "푸시업" else (PullUpCounter(), PullUpEvaluator())
+            phase_detector = create_phase_detector(exercise_type, fps=extract_fps)
+            if exercise_type == "푸시업":
+                counter, evaluator = PushUpCounter(fps=extract_fps), PushUpEvaluator()
+            else:
+                grip_type = st.session_state.get('grip_type', '오버핸드')
+                counter, evaluator = PullUpCounter(fps=extract_fps), PullUpEvaluator(grip_type=grip_type)
             
             # ✅ DTW 초기화
             ref_name = "reference_pushup.json" if exercise_type == "푸시업" else "reference_pullup.json"
@@ -273,10 +292,12 @@ if start_analysis and can_proceed:
                 smoothed = smoother.smooth(flat)
                 npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
                 phase_metric = extract_phase_metric(npts, exercise_type)
-                current_phase = phase_detector.update(phase_metric) if phase_metric is not None else 'ready'
+                current_phase = phase_detector.update(phase_metric) if phase_metric is not None else phase_detector.phase
                 
-                # ✅ 영상 끝 10프레임이면 강제 종료
-                if i >= total_frames - 10 and counter.is_active:
+                # ✅ 영상 끝: 진행 중 rep 마무리 후 종료
+                if i == total_frames - 1 and counter.is_active:
+                    if len(counter.visited_phases & counter.required_sequence) >= counter.min_required:
+                        counter.count += 1
                     counter.is_active = False
                 
                 # ✅ 핵심 수정: is_active 체크 후 evaluator 실행

@@ -16,12 +16,10 @@ def get_base64_image(img_path):
     return base64.b64encode(data).decode()
 
 # 배경 이미지 경로 (수정 가능)
-from pathlib import Path
-
 BASE_DIR = Path(__file__).resolve().parent
 BG_IMAGE = BASE_DIR.parent / "assets" / "hero.png"
 
-bg_base64 = get_base64_image(BG_IMAGE)
+bg_base64 = get_base64_image(BG_IMAGE) if BG_IMAGE.exists() else ""
 
 # ---------- Custom CSS ----------
 st.markdown(f"""
@@ -79,7 +77,15 @@ st.markdown(f"""
     .hero-sub {{
         font-size: 1.3rem;
         letter-spacing: 2px;
-        margin-bottom: 1.5rem; /* 서브타이틀과 버튼 사이 간격 대폭 줄임 */
+        margin-bottom: 0.5rem;
+    }}
+
+    .hero-greeting {{
+        font-size: 1rem;
+        color: #e7e3c4;
+        letter-spacing: 1px;
+        margin-bottom: 1rem;
+        opacity: 0.8;
     }}
 
     /* ⭐ Streamlit 실제 버튼 스타일링 ⭐ */
@@ -113,16 +119,28 @@ st.markdown(f"""
 <div class="hero">
     <div class="hero-title">AI POSE COACH</div>
     <div class="hero-sub">AI 기반 운동 영상 분석 시스템</div>
+    <div class="hero-greeting">{f'{st.session_state.get("username", "")}님 환영합니다' if st.session_state.get("username") and st.session_state.get("username") != '게스트' else ''}</div>
 </div>
 """, unsafe_allow_html=True)
 
 
 # ---------- 버튼 섹션 ----------
-# col2의 폭을 조절하여 버튼의 가로 길이를 제한할 수 있습니다.
 col1, col2, col3 = st.columns([1.5, 1, 1.5])
 
 with col2:
     st.markdown('<div class="button-container">', unsafe_allow_html=True)
     if st.button("시작하기", use_container_width=True):
         st.switch_page("pages/uploadvid.py")
+
+    # 로그인 유저만 운동 기록 버튼 표시
+    if st.session_state.get("user_id") is not None:
+        if st.button("운동 기록", use_container_width=True):
+            st.switch_page("pages/history.py")
+
+    # 로그아웃 / 로그인 버튼
+    if st.session_state.get("username"):
+        if st.button("로그아웃", use_container_width=True):
+            for key in ["user_id", "username", "guest_mode"]:
+                st.session_state.pop(key, None)
+            st.switch_page("pages/login.py")
     st.markdown('</div>', unsafe_allow_html=True)

@@ -33,6 +33,8 @@ def draw_skeleton_on_frame(img_path, keypoints):
     img = cv2.imread(str(img_path))
     if img is None:
         return None
+    if keypoints is None:
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # 연결선 먼저 그리기 (관절점 아래에 깔림)
     for joint_a, joint_b in POSE_CONNECTIONS:

@@ -4,15 +4,20 @@ from ds_modules.angle_utils import cal_angle
 class ExerciseCounter:
     """공통 카운터 상태 관리."""
 
-    def __init__(self):
+    _BASE_FPS = 10.0
+    _BASE_ACTIVE_THRESH = 4    # 기준 10 FPS에서 0.4초
+    _BASE_INACTIVE_THRESH = 10 # 기준 10 FPS에서 1.0초
+
+    def __init__(self, fps: float = 10.0):
         self.count = 0
         self.state = "idle"
         self.ready_frames = 0
         self.is_active = False
         self.inactive_frames = 0
 
-        self.active_threshold = 10
-        self.inactive_threshold = 6
+        ratio = max(fps, 1.0) / self._BASE_FPS
+        self.active_threshold = max(1, round(self._BASE_ACTIVE_THRESH * ratio))
+        self.inactive_threshold = max(1, round(self._BASE_INACTIVE_THRESH * ratio))
 
     def update(self, npts, current_phase=None):
         raise NotImplementedError
@@ -32,11 +37,10 @@ class ExerciseCounter:
 
 
 class PushUpCounter(ExerciseCounter):
-    """푸시업 카운터 (기본/Phase 모드 겸용)."""
+    """푸시업 카운터 (Phase 기반 — top+bottom 방문 시 카운트)."""
 
-    def __init__(self):
-        super().__init__()
-        self.state = "up"
+    def __init__(self, fps: float = 10.0):
+        super().__init__(fps)
         self.required_sequence = {"top", "bottom"}
         self.min_required = 2
         self.visited_phases = set()
@@ -55,7 +59,7 @@ class PushUpCounter(ExerciseCounter):
             if self.is_active:
                 self.inactive_frames += 1
                 if self.inactive_frames > self.inactive_threshold:
-                    self._deactivate("up")
+                    self._deactivate("idle")
                     self.visited_phases.clear()
                     self._count_gate_phase = None
             return self.count
@@ -63,61 +67,49 @@ class PushUpCounter(ExerciseCounter):
         avg_arm, wrist_y, knee_y = self._compute_metrics(npts)
 
         if not self.is_active:
-            if wrist_y > knee_y and avg_arm > 160:
+            if wrist_y > knee_y and avg_arm > 140:
                 self.ready_frames += 1
             else:
-                self.ready_frames = 0
+                self.ready_frames = max(0, self.ready_frames - 1)
 
             if self.ready_frames > self.active_threshold:
                 self.is_active = True
-                self.state = "up"
                 self.inactive_frames = 0
                 self.visited_phases.clear()
                 self._count_gate_phase = None
             return self.count
 
-        is_exercise_pose = wrist_y > (knee_y - 0.03)
+        is_exercise_pose = wrist_y > (knee_y - 0.08)
         if is_exercise_pose:
             self.inactive_frames = 0
         else:
             self.inactive_frames += 1
             if self.inactive_frames > self.inactive_threshold:
-                self._deactivate("up")
+                self._deactivate("idle")
                 self.visited_phases.clear()
                 self._count_gate_phase = None
                 return self.count
 
-        if current_phase is not None:
-            if current_phase in self.required_sequence:
-                self.visited_phases.add(current_phase)
+        if current_phase in self.required_sequence:
+            self.visited_phases.add(current_phase)
 
-            if current_phase == "top":
-                matched = len(self.visited_phases & self.required_sequence)
-                if matched >= self.min_required and self._count_gate_phase != "top":
-                    self.count += 1
-                    self.visited_phases.clear()
-                    self._count_gate_phase = "top"
-            else:
-                self._count_gate_phase = None
-            return self.count
-
-        if self.state == "up":
-            if avg_arm < 100:
-                self.state = "down"
-        elif self.state == "down":
-            if avg_arm > 160:
+        if current_phase == "top":
+            matched = len(self.visited_phases & self.required_sequence)
+            if matched >= self.min_required and self._count_gate_phase != "top":
                 self.count += 1
-                self.state = "up"
+                self.visited_phases.clear()
+                self._count_gate_phase = "top"
+        else:
+            self._count_gate_phase = None
 
         return self.count
 
 
 class PullUpCounter(ExerciseCounter):
-    """풀업 카운터 (기본/Phase 모드 겸용)."""
+    """풀업 카운터 (Phase 기반 — top+bottom 방문 시 카운트)."""
 
-    def __init__(self):
-        super().__init__()
-        self.state = "down"
+    def __init__(self, fps: float = 10.0):
+        super().__init__(fps)
         self.required_sequence = {"top", "bottom"}
         self.min_required = 2
         self.visited_phases = set()
@@ -126,66 +118,54 @@ class PullUpCounter(ExerciseCounter):
     def _compute_metrics(self, npts):
         wrist_y = (npts["Left Wrist"][1] + npts["Right Wrist"][1]) / 2
         shoulder_y = (npts["Left Shoulder"][1] + npts["Right Shoulder"][1]) / 2
-        nose_y = npts["Nose"][1]
-        return wrist_y, shoulder_y, nose_y
+        return wrist_y, shoulder_y
 
     def update(self, npts, current_phase=None):
         if npts is None:
             if self.is_active:
                 self.inactive_frames += 1
                 if self.inactive_frames > self.inactive_threshold:
-                    self._deactivate("down")
+                    self._deactivate("idle")
                     self.visited_phases.clear()
                     self._count_gate_phase = None
             return self.count
 
-        wrist_y, shoulder_y, nose_y = self._compute_metrics(npts)
+        wrist_y, shoulder_y = self._compute_metrics(npts)
 
         if not self.is_active:
-            if wrist_y < shoulder_y:
+            if wrist_y < shoulder_y + 0.05:
                 self.ready_frames += 1
             else:
-                self.ready_frames = 0
+                self.ready_frames = max(0, self.ready_frames - 1)
 
             if self.ready_frames > self.active_threshold:
                 self.is_active = True
-                self.state = "down"
                 self.inactive_frames = 0
                 self.visited_phases.clear()
                 self._count_gate_phase = None
             return self.count
 
-        is_exercise_pose = wrist_y < (shoulder_y + 0.06)
+        is_exercise_pose = wrist_y < (shoulder_y + 0.12)
         if is_exercise_pose:
             self.inactive_frames = 0
         else:
             self.inactive_frames += 1
             if self.inactive_frames > self.inactive_threshold:
-                self._deactivate("down")
+                self._deactivate("idle")
                 self.visited_phases.clear()
                 self._count_gate_phase = None
                 return self.count
 
-        if current_phase is not None:
-            if current_phase in self.required_sequence:
-                self.visited_phases.add(current_phase)
+        if current_phase in self.required_sequence:
+            self.visited_phases.add(current_phase)
 
-            if current_phase == "bottom":
-                matched = len(self.visited_phases & self.required_sequence)
-                if matched >= self.min_required and self._count_gate_phase != "bottom":
-                    self.count += 1
-                    self.visited_phases.clear()
-                    self._count_gate_phase = "bottom"
-            else:
-                self._count_gate_phase = None
-            return self.count
-
-        if self.state == "down":
-            if nose_y < wrist_y + 0.05:
-                self.state = "up"
-        elif self.state == "up":
-            if nose_y > wrist_y + 0.2:
+        if current_phase == "bottom":
+            matched = len(self.visited_phases & self.required_sequence)
+            if matched >= self.min_required and self._count_gate_phase != "bottom":
                 self.count += 1
-                self.state = "down"
+                self.visited_phases.clear()
+                self._count_gate_phase = "bottom"
+        else:
+            self._count_gate_phase = None
 
         return self.count

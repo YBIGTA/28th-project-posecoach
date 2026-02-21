@@ -80,12 +80,12 @@ def generate_reference(video_path: str, exercise_type: str, output_path: str,
         # 전처리 + 페이즈 감지 + 피처 추출
         print("[3/4] 페이즈 감지 및 피처 추출 중...")
         smoother = KeypointSmoother(window=3)
-        phase_detector = create_phase_detector(exercise_type)
+        phase_detector = create_phase_detector(exercise_type, fps=extract_fps)
 
         if exercise_type == "푸시업":
-            counter = PushUpCounter()
+            counter = PushUpCounter(fps=extract_fps)
         else:
-            counter = PullUpCounter()
+            counter = PullUpCounter(fps=extract_fps)
 
         phase_features: dict = defaultdict(list)
         phase_frame_counts: dict = defaultdict(int)
