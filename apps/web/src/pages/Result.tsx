@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -8,8 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
-  Image as ImageIcon,
-  TrendingUp,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 
@@ -232,22 +231,21 @@ export function Result() {
   const analysis = state.analysisResults;
   const savedWorkoutId = state.savedWorkoutId ?? null;
 
-  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
   const [frameIndex, setFrameIndex] = useState<number>(0);
-  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [geminiLoading, setGeminiLoading] = useState(false);
   const [geminiError, setGeminiError] = useState<string | null>(null);
   const [geminiFeedback, setGeminiFeedback] = useState<string | null>(null);
+  const autoGeminiRequestedRef = useRef<string>("");
 
   if (!analysis) {
     return (
-      <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-900 p-8 flex items-center justify-center">
-        <Card className="max-w-xl w-full">
+      <div className="modern-shell min-h-screen w-full p-8 flex items-center justify-center">
+        <Card className="max-w-xl w-full glass-card">
           <CardContent className="p-8 text-center space-y-4">
             <h1 className="text-2xl font-bold">분석 결과가 없습니다</h1>
-            <p className="text-gray-600">영상을 업로드한 뒤 분석을 실행해 주세요.</p>
-            <Button onClick={() => navigate("/select-exercise")}>분석 시작으로 이동</Button>
+            <p className="text-soft">영상을 업로드한 뒤 분석을 실행해 주세요.</p>
+            <Button className="modern-primary-btn" onClick={() => navigate("/select-exercise")}>분석 시작으로 이동</Button>
           </CardContent>
         </Card>
       </div>
@@ -267,14 +265,6 @@ export function Result() {
 
   const dtwOverall = analysis.dtw_result?.overall_dtw_score;
   const dtwPhase = analysis.dtw_result?.phase_dtw_scores ?? {};
-
-  const frameRows = useMemo(
-    () =>
-      [...(analysis.frame_scores ?? [])]
-        .sort((a, b) => a.frame_idx - b.frame_idx)
-        .slice(0, 300),
-    [analysis.frame_scores],
-  );
 
   const keypointFrames = useMemo(
     () => [...(analysis.keypoints ?? [])].sort((a, b) => a.frame_idx - b.frame_idx),
@@ -314,7 +304,7 @@ export function Result() {
   const currentImageUrl = toImageUrl(currentKeypoint?.img_url ?? currentScore?.img_url);
   const currentSelected = selectedFrameSet.has(frameIndex);
 
-  const handleGenerateGeminiFeedback = async () => {
+  const handleGenerateGeminiFeedback = useCallback(async () => {
     if (geminiLoading) return;
     setGeminiLoading(true);
     setGeminiError(null);
@@ -339,7 +329,6 @@ export function Result() {
           dtw_active: analysis.dtw_active,
           dtw_result: analysis.dtw_result,
         },
-        apiKey: geminiApiKey.trim() ? geminiApiKey.trim() : undefined,
       });
       setGeminiFeedback(feedback);
     } catch (e) {
@@ -347,112 +336,107 @@ export function Result() {
     } finally {
       setGeminiLoading(false);
     }
-  };
+  }, [analysis, geminiLoading]);
+
+  const autoGeminiKey = useMemo(
+    () => `${analysis.video_name}|${analysis.exercise_count}|${analysis.total_frames}|${analysis.filtered_out_count ?? -1}`,
+    [analysis.video_name, analysis.exercise_count, analysis.total_frames, analysis.filtered_out_count],
+  );
+
+  useEffect(() => {
+    if (autoGeminiRequestedRef.current === autoGeminiKey) return;
+    autoGeminiRequestedRef.current = autoGeminiKey;
+    void handleGenerateGeminiFeedback();
+  }, [autoGeminiKey, handleGenerateGeminiFeedback]);
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-900 p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-100 rounded-full mb-4">
-            <BarChart3 className="w-10 h-10 text-blue-600" />
-          </div>
-          <h1 className="text-4xl font-bold mb-2">분석 완료</h1>
-          <p className="text-gray-600">
+    <div className="modern-shell min-h-screen w-full p-6 md:p-8">
+      <div className="mx-auto max-w-6xl">
+        <div className="text-center mb-12 animate-rise">
+          <span className="hero-chip mb-4">
+            <Sparkles className="w-3.5 h-3.5 mr-1" />
+            분석 리포트
+          </span>
+          
+          <h1 className="text-4xl md:text-5xl font-bold mb-2">분석 완료</h1>
+          <p className="text-soft">
             {exercise === "pullup" ? "풀업" : "푸시업"} 결과
             {grip && <span> ({grip})</span>}
           </p>
           {savedWorkoutId ? (
-            <p className="text-sm text-green-700 mt-2">운동 기록으로 저장됨 (#{savedWorkoutId})</p>
+            <p className="text-sm text-emerald-700 dark:text-emerald-300 mt-2">운동 기록으로 저장됨 (#{savedWorkoutId})</p>
           ) : (
-            <p className="text-sm text-gray-500 mt-2">로그인하지 않아 기록에 저장되지 않았습니다.</p>
+            <p className="text-sm text-soft mt-2">로그인하지 않아 기록에 저장되지 않았습니다.</p>
           )}
         </div>
 
-        <Card className="mb-8">
+        <Card className="mb-8 glass-card animate-rise delay-1">
           <CardContent className="p-8">
             <div className="text-center mb-6">
               <div className="text-6xl font-bold mb-2" style={{ color: scoreColor(overallScore) }}>
                 {overallScore}
                 <span className="text-3xl">%</span>
               </div>
-              <p className="text-gray-600">종합 점수</p>
+              <p className="text-soft">종합 점수</p>
             </div>
             <Progress value={overallScore} className="h-3" />
 
             <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-8">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-700">{analysis.exercise_count}</div>
-                <p className="text-sm text-gray-600">반복 횟수</p>
+              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
+                <div className="text-2xl font-bold text-cyan-300">{analysis.exercise_count}</div>
+                <p className="text-sm text-slate-100">반복 횟수</p>
               </div>
-              <div className="text-center p-4 bg-slate-100 rounded-lg">
-                <div className="text-2xl font-bold text-slate-700">{analysis.total_frames}</div>
-                <p className="text-sm text-gray-600">추출 프레임</p>
+              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
+                <div className="text-2xl font-bold text-slate-100">{analysis.total_frames}</div>
+                <p className="text-sm text-slate-100">추출 프레임</p>
               </div>
-              <div className="text-center p-4 bg-indigo-50 rounded-lg">
-                <div className="text-2xl font-bold text-indigo-700">{analysis.analyzed_frame_count ?? 0}</div>
-                <p className="text-sm text-gray-600">분석 프레임</p>
+              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
+                <div className="text-2xl font-bold text-indigo-300">{analysis.analyzed_frame_count ?? 0}</div>
+                <p className="text-sm text-slate-100">분석 프레임</p>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
                 <div className="flex items-center justify-center mb-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-600 mr-1" />
-                  <span className="text-2xl font-bold text-green-600">{goodCount}</span>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 mr-1" />
+                  <span className="text-2xl font-bold text-emerald-400">{goodCount}</span>
                 </div>
-                <p className="text-sm text-gray-600">양호</p>
+                <p className="text-sm text-slate-100">양호</p>
               </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg">
+              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
                 <div className="flex items-center justify-center mb-2">
-                  <AlertTriangle className="w-5 h-5 text-yellow-600 mr-1" />
-                  <span className="text-2xl font-bold text-yellow-600">{warningCount}</span>
+                  <AlertTriangle className="w-5 h-5 text-amber-400 mr-1" />
+                  <span className="text-2xl font-bold text-amber-400">{warningCount}</span>
                 </div>
-                <p className="text-sm text-gray-600">주의</p>
+                <p className="text-sm text-slate-100">주의</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
+              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
                 <div className="flex items-center justify-center mb-2">
-                  <XCircle className="w-5 h-5 text-red-600 mr-1" />
-                  <span className="text-2xl font-bold text-red-600">{errorCount}</span>
+                  <XCircle className="w-5 h-5 text-red-400 mr-1" />
+                  <span className="text-2xl font-bold text-red-400">{errorCount}</span>
                 </div>
-                <p className="text-sm text-gray-600">오류</p>
+                <p className="text-sm text-slate-100">오류</p>
               </div>
-            </div>
-
-            <div className="mt-6 text-sm text-gray-600">
-              필터링 방식:
-              {" "}
-              <span className="font-semibold">{toFilteringMethodLabel(analysis.filtering?.method)}</span>
-              {analysis.filtering?.reason ? <span> ({toFilteringReasonLabel(analysis.filtering.reason)})</span> : null}
-              {(analysis.filtering?.rule_active_frames !== undefined ||
-                analysis.filtering?.rule_rest_frames !== undefined ||
-                analysis.filtering?.ml_fallback_frames !== undefined) ? (
-                <div className="mt-2 text-xs text-gray-500">
-                  규칙 활성: {analysis.filtering?.rule_active_frames ?? 0}프레임,
-                  {" "}
-                  규칙 휴식: {analysis.filtering?.rule_rest_frames ?? 0}프레임,
-                  {" "}
-                  ML 보완: {analysis.filtering?.ml_fallback_frames ?? 0}프레임
-                </div>
-              ) : null}
             </div>
           </CardContent>
         </Card>
 
         {analysis.dtw_active ? (
-          <Card className="mb-8">
+          <Card className="mb-8 glass-card animate-rise delay-1">
             <CardHeader>
               <CardTitle>DTW 유사도</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-100 rounded-lg">
-                  <div className="text-sm text-slate-600 mb-1">종합 DTW 점수</div>
-                  <div className="text-3xl font-bold text-slate-900">
+                <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700">
+                  <div className="text-sm text-soft mb-1">종합 DTW 점수</div>
+                  <div className="text-3xl font-bold">
                     {typeof dtwOverall === "number" ? `${Math.round(dtwOverall * 100)}%` : "없음"}
                   </div>
                 </div>
-                <div className="p-4 bg-slate-100 rounded-lg">
-                  <div className="text-sm text-slate-600 mb-2">Phase별 점수</div>
+                <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700">
+                  <div className="text-sm text-soft mb-2">Phase별 점수</div>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(dtwPhase).length === 0 ? (
-                      <span className="text-sm text-gray-500">단계 점수 없음</span>
+                      <span className="text-sm text-soft">단계 점수 없음</span>
                     ) : (
                       Object.entries(dtwPhase).map(([phase, val]) => (
                         <Badge key={phase} variant="secondary">
@@ -467,17 +451,17 @@ export function Result() {
           </Card>
         ) : null}
 
-        <Card className="mb-8">
+        <Card className="mb-8 glass-card animate-rise delay-2">
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <TrendingUp className="w-5 h-5 mr-2" />
+            <CardTitle className="flex items-center gap-2 text-2xl md:text-3xl font-extrabold tracking-tight">
+              <span aria-hidden>📋</span>
               상세 피드백
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {feedbackItems.map((item) => (
-                <div key={item.id} className="flex items-start gap-4 p-4 rounded-lg border bg-white hover:shadow-md transition-shadow">
+                <div key={item.id} className="flex items-start gap-4 p-4 rounded-xl border border-slate-700 bg-slate-900/55">
                   <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
@@ -486,7 +470,7 @@ export function Result() {
                         {item.type === "good" ? "양호" : item.type === "warning" ? "주의" : "오류"}
                       </Badge>
                     </div>
-                    <p className="text-gray-600 text-sm">{item.description}</p>
+                    <p className="text-soft text-sm">{item.description}</p>
                   </div>
                 </div>
               ))}
@@ -494,35 +478,26 @@ export function Result() {
           </CardContent>
         </Card>
 
-        <Card className="mb-8">
+        <Card className="mb-8 glass-card animate-rise delay-2">
           <CardHeader>
-            <CardTitle>Gemini 종합 리포트</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-2xl md:text-3xl font-extrabold tracking-tight">
+              <span aria-hidden>🤖</span>
+              트레이너의 종합 리포트
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">
-                `gemini_feedback.py` 기반으로 분석 결과를 요약/정리한 종합 피드백을 생성합니다.
-                {" "}
-                서버 `.env`의 `GEMINI_API_KEY`를 사용하거나, 아래에 직접 입력할 수 있습니다.
-              </p>
-              <input
-                type="password"
-                value={geminiApiKey}
-                onChange={(e) => setGeminiApiKey(e.target.value)}
-                placeholder="선택 입력: Gemini API Key (AIza...)"
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              />
               <div className="flex items-center gap-3">
                 <Button
                   type="button"
                   onClick={handleGenerateGeminiFeedback}
                   disabled={geminiLoading}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  className="modern-primary-btn"
                 >
-                  {geminiLoading ? "생성 중..." : "AI 종합 피드백 생성"}
+                  {geminiLoading ? "자동 생성 중..." : "AI 종합 피드백 다시 생성"}
                 </Button>
                 {geminiFeedback ? (
-                  <Button type="button" variant="outline" onClick={() => setGeminiFeedback(null)}>
+                  <Button type="button" variant="outline" className="modern-outline-btn" onClick={() => setGeminiFeedback(null)}>
                     지우기
                   </Button>
                 ) : null}
@@ -535,19 +510,22 @@ export function Result() {
               ) : null}
 
               {geminiFeedback ? (
-                <div className="rounded-lg border bg-slate-50 px-4 py-4 text-sm whitespace-pre-wrap leading-7">
+                <div className="rounded-lg border border-slate-700 bg-slate-900/65 px-4 py-4 text-sm whitespace-pre-wrap leading-7">
                   {geminiFeedback}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">아직 생성된 AI 종합 피드백이 없습니다.</p>
+                <p className="text-sm text-soft">아직 생성된 AI 종합 피드백이 없습니다.</p>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="mb-8">
+        <Card className="mb-8 glass-card animate-rise delay-3">
           <CardHeader>
-            <CardTitle>프레임 탐색기</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-2xl md:text-3xl font-extrabold tracking-tight">
+              <span aria-hidden>🎬</span>
+              프레임 탐색기
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2 mb-4">
@@ -558,7 +536,7 @@ export function Result() {
                 <Badge variant="secondary">준비/종료 구간 (점수 없음)</Badge>
               ) : null}
               {!currentSelected ? (
-                <Badge variant="destructive">필터링 제외 프레임 (휴식 구간)</Badge>
+                <Badge className="bg-red-600 text-white hover:bg-red-600">필터링 제외 프레임 (휴식 구간)</Badge>
               ) : null}
             </div>
 
@@ -567,6 +545,7 @@ export function Result() {
                 type="button"
                 variant="outline"
                 size="sm"
+                className="modern-outline-btn"
                 disabled={frameIndex <= 0}
                 onClick={() => setFrameIndex((prev) => Math.max(0, prev - 1))}
               >
@@ -577,13 +556,14 @@ export function Result() {
                 type="button"
                 variant="outline"
                 size="sm"
+                className="modern-outline-btn"
                 disabled={frameIndex >= maxFrameIdx}
                 onClick={() => setFrameIndex((prev) => Math.min(maxFrameIdx, prev + 1))}
               >
                 다음
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => setShowOverlay((prev) => !prev)}>
+              <Button type="button" variant="outline" size="sm" className="modern-outline-btn" onClick={() => setShowOverlay((prev) => !prev)}>
                 {showOverlay ? "오버레이 숨기기" : "오버레이 보기"}
               </Button>
             </div>
@@ -594,22 +574,22 @@ export function Result() {
               max={maxFrameIdx}
               value={frameIndex}
               onChange={(e) => setFrameIndex(Number(e.target.value))}
-              className="w-full mb-6"
+              className="w-full mb-6 accent-cyan-600"
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-gray-600 mb-2">원본 프레임</p>
+                <p className="text-sm text-soft mb-2">원본 프레임</p>
                 {currentImageUrl ? (
-                  <img src={currentImageUrl} alt="원본 프레임" className="w-full rounded-lg border bg-black" />
+                  <img src={currentImageUrl} alt="원본 프레임" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-black" />
                 ) : (
-                  <div className="rounded-lg border bg-slate-100 text-sm text-slate-600 p-10 text-center">
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-sm text-soft p-10 text-center">
                     프레임 이미지를 불러올 수 없습니다.
                   </div>
                 )}
               </div>
               <div>
-                <p className="text-sm text-gray-600 mb-2">스켈레톤 오버레이</p>
+                <p className="text-sm text-soft mb-2">스켈레톤 오버레이</p>
                 <SkeletonPreview imageUrl={currentImageUrl} keypoints={currentKeypoint?.pts} showOverlay={showOverlay} />
               </div>
             </div>
@@ -619,16 +599,16 @@ export function Result() {
                 <h3 className="font-semibold">프레임 피드백</h3>
                 {currentScore.errors && currentScore.errors.length > 0 ? (
                   currentScore.errors.map((err, idx) => (
-                    <p key={`${currentScore.frame_idx}-${idx}`} className="text-sm text-red-700">
+                    <p key={`${currentScore.frame_idx}-${idx}`} className="text-sm text-red-700 dark:text-red-300">
                       - {err}
                     </p>
                   ))
                 ) : (
-                  <p className="text-sm text-green-700">이 프레임에서 자세 오류가 감지되지 않았습니다.</p>
+                  <p className="text-sm text-emerald-700 dark:text-emerald-300">이 프레임에서 자세 오류가 감지되지 않았습니다.</p>
                 )}
               </div>
             ) : (
-              <p className="mt-6 text-sm text-gray-600">
+              <p className="mt-6 text-sm text-soft">
                 {currentSelected
                   ? "활성 분석 구간에 포함되지만 점수 산정 Phase 바깥 프레임입니다."
                   : "활동성 필터링으로 제외된 프레임입니다. (휴식/저움직임 구간)"}
@@ -637,89 +617,14 @@ export function Result() {
           </CardContent>
         </Card>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>프레임별 분석</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-auto max-h-[520px] border rounded-lg">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-100 sticky top-0">
-                  <tr>
-                    <th className="text-left px-3 py-2">프레임</th>
-                    <th className="text-left px-3 py-2">미리보기</th>
-                    <th className="text-left px-3 py-2">단계</th>
-                    <th className="text-left px-3 py-2">점수</th>
-                    <th className="text-left px-3 py-2">오류</th>
-                    <th className="text-left px-3 py-2">이동</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {frameRows.map((row) => {
-                    const imgUrl = toImageUrl(row.img_url);
-                    return (
-                      <tr key={row.frame_idx} className="border-t">
-                        <td className="px-3 py-2 font-mono">{row.frame_idx}</td>
-                        <td className="px-3 py-2">
-                          {imgUrl ? (
-                            <button
-                              type="button"
-                              className="flex items-center gap-1 text-blue-700 hover:underline"
-                              onClick={() => setSelectedImageUrl(imgUrl)}
-                            >
-                              <ImageIcon className="w-4 h-4" />
-                              보기
-                            </button>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">{toPhaseLabel(row.phase)}</td>
-                        <td className="px-3 py-2">{Math.round(row.score * 100)}%</td>
-                        <td className="px-3 py-2">
-                          {row.errors && row.errors.length > 0 ? row.errors.join(", ") : "없음"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setFrameIndex(Math.min(Math.max(0, row.frame_idx), maxFrameIdx))}
-                          >
-                            이동
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              분석된 프레임 최대 300개까지만 표시합니다.
-            </p>
-          </CardContent>
-        </Card>
-
-        {selectedImageUrl ? (
-          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setSelectedImageUrl(null)}>
-            <img
-              src={selectedImageUrl}
-              alt="프레임 미리보기"
-              className="max-w-full max-h-full rounded-lg shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        ) : null}
-
         <div className="flex justify-center gap-4">
-          <Button size="lg" variant="outline" className="px-8" onClick={() => navigate("/")}>
+          <Button size="lg" variant="outline" className="modern-outline-btn px-8" onClick={() => navigate("/")}>
             <Home className="w-4 h-4 mr-2" />
             홈
           </Button>
           <Button
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-8"
+            className="modern-primary-btn px-8"
             onClick={() => navigate("/select-exercise")}
           >
             다시 분석하기

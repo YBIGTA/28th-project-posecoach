@@ -109,9 +109,9 @@ export function UploadVideo() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-8">
+    <div className="modern-shell min-h-screen w-full flex items-center justify-center p-8">
       <div className="max-w-3xl w-full">
-        <Button variant="ghost" className="mb-8" onClick={() => navigate(-1)} disabled={isAnalyzing}>
+        <Button variant="ghost" className="mb-8 modern-outline-btn" onClick={() => navigate(-1)} disabled={isAnalyzing}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           뒤로
         </Button>
@@ -121,23 +121,23 @@ export function UploadVideo() {
             <Video className="w-8 h-8 text-green-600" />
           </div>
           <h1 className="text-4xl font-bold mb-4">운동 영상 업로드</h1>
-          <p className="text-gray-600 mb-2">분석할 영상을 업로드하세요.</p>
-          <p className="text-sm text-gray-500">
+          <p className="text-soft mb-2">분석할 영상을 업로드하세요.</p>
+          <p className="text-sm text-soft">
             선택한 운동: <span className="font-semibold">{exercise === "pullup" ? "풀업" : "푸시업"}</span>
             {grip && <span> - {grip}</span>}
           </p>
         </div>
 
         {isAnalyzing ? (
-          <Card>
+          <Card className="glass-card">
             <CardContent className="p-16">
               <div className="flex flex-col items-center text-center">
                 <Loader2 className="w-16 h-16 text-blue-600 animate-spin mb-6" />
                 <h2 className="text-2xl font-bold mb-2">영상 분석 중...</h2>
-                <p className="text-gray-600">포즈 추출과 자세 평가를 진행하고 있습니다.</p>
-                <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 px-5 py-4 max-w-xl w-full">
-                  <p className="text-sm font-semibold text-blue-700 mb-1">운동 팁/명언</p>
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                <p className="text-soft">포즈 추출과 자세 평가를 진행하고 있습니다.</p>
+                <div className="mt-6 rounded-lg border border-slate-700 bg-slate-900/85 px-5 py-4 max-w-xl w-full">
+                  <p className="text-sm font-semibold text-orange-300 mb-1">운동 팁/명언</p>
+                  <p className="text-sm text-slate-100 whitespace-pre-wrap">
                     {rotatingMessages[messageIndex]}
                   </p>
                 </div>
@@ -146,15 +146,15 @@ export function UploadVideo() {
           </Card>
         ) : (
           <>
-            <Card>
+            <Card className="glass-card">
               <CardContent className="p-8">
                 <div
                   className={`border-2 border-dashed rounded-lg p-12 text-center transition-all ${
                     isDragging
-                      ? "border-green-600 bg-green-50"
+                      ? "border-green-600 bg-green-50/80 dark:bg-green-900/20"
                       : selectedFile
-                        ? "border-green-600 bg-green-50"
-                        : "border-gray-300 hover:border-green-400"
+                        ? "border-green-600 bg-green-50/80 dark:bg-green-900/20"
+                        : "border-gray-300 dark:border-slate-700 hover:border-green-400"
                   }`}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -164,17 +164,17 @@ export function UploadVideo() {
                     <div className="flex flex-col items-center">
                       <CheckCircle2 className="w-16 h-16 text-green-600 mb-4" />
                       <p className="text-lg font-semibold mb-2">{selectedFile.name}</p>
-                      <p className="text-gray-600 mb-4">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                      <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                      <p className="text-soft mb-4">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                      <Button variant="outline" className="modern-outline-btn" onClick={() => fileInputRef.current?.click()}>
                         다른 파일 선택
                       </Button>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center">
-                      <Upload className="w-16 h-16 text-gray-400 mb-4" />
+                      <Upload className="w-16 h-16 text-gray-400 dark:text-slate-500 mb-4" />
                       <p className="text-lg font-semibold mb-2">영상을 드래그하거나 클릭해 업로드하세요</p>
-                      <p className="text-gray-500 mb-4">MP4, MOV, AVI, WEBM</p>
-                      <Button onClick={() => fileInputRef.current?.click()}>파일 선택</Button>
+                      <p className="text-soft mb-4">MP4, MOV, AVI, WEBM</p>
+                      <Button className="modern-primary-btn" onClick={() => fileInputRef.current?.click()}>파일 선택</Button>
                     </div>
                   )}
 
@@ -198,7 +198,7 @@ export function UploadVideo() {
             <div className="flex justify-center mt-8">
               <Button
                 size="lg"
-                className="bg-green-600 hover:bg-green-700 text-white px-16 py-6 text-lg"
+                className="modern-primary-btn px-16 py-6 text-lg"
                 disabled={!selectedFile}
                 onClick={handleAnalyze}
               >

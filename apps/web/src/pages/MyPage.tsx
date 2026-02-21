@@ -74,14 +74,14 @@ export function MyPage() {
 
   if (!session) {
     return (
-      <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-900 p-8 flex items-center justify-center">
-        <Card className="max-w-xl w-full">
+      <div className="modern-shell min-h-screen w-full p-8 flex items-center justify-center">
+        <Card className="max-w-xl w-full glass-card">
           <CardContent className="p-8 text-center space-y-4">
             <h1 className="text-2xl font-bold">로그인이 필요합니다</h1>
-            <p className="text-gray-600">마이페이지는 로그인 후 이용할 수 있습니다.</p>
+            <p className="text-soft">마이페이지는 로그인 후 이용할 수 있습니다.</p>
             <div className="flex justify-center gap-3">
-              <Button variant="outline" onClick={() => navigate("/")}>홈으로</Button>
-              <Button onClick={() => navigate("/login")}>로그인하기</Button>
+              <Button variant="outline" className="modern-outline-btn" onClick={() => navigate("/")}>홈으로</Button>
+              <Button className="modern-primary-btn" onClick={() => navigate("/login")}>로그인하기</Button>
             </div>
           </CardContent>
         </Card>
@@ -90,21 +90,21 @@ export function MyPage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-900 p-8">
+    <div className="modern-shell min-h-screen w-full p-8">
       <div className="max-w-6xl mx-auto">
-        <Button variant="ghost" className="mb-6" onClick={() => navigate("/")}>
+        <Button variant="ghost" className="mb-6 modern-outline-btn" onClick={() => navigate("/")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           홈으로
         </Button>
 
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">마이페이지</h1>
-          <p className="text-gray-600">{session.username}님의 운동 통계와 과거 분석 기록입니다.</p>
+          <p className="text-soft">{session.username}님의 운동 통계와 과거 분석 기록입니다.</p>
         </div>
 
         {loading ? (
-          <Card>
-            <CardContent className="p-10 text-center text-gray-600">데이터를 불러오는 중...</CardContent>
+          <Card className="glass-card">
+            <CardContent className="p-10 text-center text-soft">데이터를 불러오는 중...</CardContent>
           </Card>
         ) : null}
 
@@ -117,53 +117,53 @@ export function MyPage() {
         {!loading && !error ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-              <Card>
+              <Card className="glass-card">
                 <CardContent className="p-4 text-center">
                   <History className="w-5 h-5 mx-auto mb-2 text-slate-600" />
-                  <p className="text-xs text-gray-500">총 운동 횟수</p>
+                  <p className="text-xs text-soft">총 운동 횟수</p>
                   <p className="text-2xl font-bold">{stats?.total_workouts ?? 0}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="glass-card">
                 <CardContent className="p-4 text-center">
                   <Clock3 className="w-5 h-5 mx-auto mb-2 text-slate-600" />
-                  <p className="text-xs text-gray-500">총 운동 시간</p>
+                  <p className="text-xs text-soft">총 운동 시간</p>
                   <p className="text-2xl font-bold">{Math.round(stats?.total_duration ?? 0)}초</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="glass-card">
                 <CardContent className="p-4 text-center">
                   <Trophy className="w-5 h-5 mx-auto mb-2 text-slate-600" />
-                  <p className="text-xs text-gray-500">평균 점수</p>
+                  <p className="text-xs text-soft">평균 점수</p>
                   <p className="text-2xl font-bold">{toPercent(stats?.overall_avg_score)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="glass-card">
                 <CardContent className="p-4 text-center">
                   <Dumbbell className="w-5 h-5 mx-auto mb-2 text-slate-600" />
-                  <p className="text-xs text-gray-500">총 반복 횟수</p>
+                  <p className="text-xs text-soft">총 반복 횟수</p>
                   <p className="text-2xl font-bold">{stats?.total_reps ?? 0}회</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="glass-card">
                 <CardContent className="p-4 text-center">
-                  <p className="text-xs text-gray-500 mb-2">가장 많이 한 운동</p>
+                  <p className="text-xs text-soft mb-2">가장 많이 한 운동</p>
                   <p className="text-2xl font-bold">{stats?.favorite_exercise ?? "-"}</p>
                 </CardContent>
               </Card>
             </div>
 
-            <Card>
+            <Card className="glass-card">
               <CardHeader>
                 <CardTitle>과거 분석 기록</CardTitle>
               </CardHeader>
               <CardContent>
                 {workouts.length === 0 ? (
-                  <p className="text-gray-600">저장된 운동 기록이 없습니다.</p>
+                  <p className="text-soft">저장된 운동 기록이 없습니다.</p>
                 ) : (
                   <div className="space-y-4">
                     {workouts.map((w) => (
-                      <div key={w.id} className="rounded-lg border p-4 bg-white">
+                      <div key={w.id} className="rounded-lg border border-slate-700 p-4 bg-slate-900/55">
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                           <div className="font-semibold">{formatDate(w.created_at)}</div>
                           <div className="flex flex-wrap gap-2">
@@ -173,7 +173,7 @@ export function MyPage() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm text-gray-700">
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm text-slate-300">
                           <div>영상: {w.video_name}</div>
                           <div>반복: {w.exercise_count}회</div>
                           <div>길이: {Math.round(w.duration)}초</div>
@@ -183,12 +183,12 @@ export function MyPage() {
                         </div>
 
                         <details className="mt-3">
-                          <summary className="cursor-pointer text-sm text-blue-700">상세 보기</summary>
+                          <summary className="cursor-pointer text-sm text-blue-700 dark:text-blue-300">상세 보기</summary>
                           <div className="mt-3 space-y-2 text-sm">
                             <div>
                               <p className="font-medium mb-1">오류 요약</p>
                               {(w.errors?.length ?? 0) === 0 ? (
-                                <p className="text-gray-600">오류 없음</p>
+                                <p className="text-soft">오류 없음</p>
                               ) : (
                                 <ul className="list-disc pl-5">
                                   {(w.errors ?? []).map((err, idx) => (
@@ -200,7 +200,7 @@ export function MyPage() {
                             <div>
                               <p className="font-medium mb-1">단계별 평균 점수</p>
                               {(w.phase_scores?.length ?? 0) === 0 ? (
-                                <p className="text-gray-600">단계 데이터 없음</p>
+                                <p className="text-soft">단계 데이터 없음</p>
                               ) : (
                                 <ul className="list-disc pl-5">
                                   {(w.phase_scores ?? []).map((p, idx) => (

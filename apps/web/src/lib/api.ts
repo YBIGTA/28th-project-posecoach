@@ -1,6 +1,11 @@
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
 
+// Prototype only: hardcoded key for AI report generation.
+// Replace with your key before testing. Do not keep this in production.
+const PROTOTYPE_GEMINI_API_KEY = "AIzaSyCNVNNZkO0s7lJx6AQYZ8WMJUuxX-FzBAw";
+const ENV_GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ?? "";
+
 export type AnalysisResults = {
   video_name: string;
   exercise_type: string;
@@ -192,18 +197,51 @@ export async function fetchUserWorkouts(userId: number): Promise<WorkoutRecord[]
 }
 
 export async function generateGeminiFeedback(input: GeminiFeedbackInput): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/analysis/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      analysis_results: input.analysisResults,
-      api_key: input.apiKey,
-      temperature: input.temperature ?? 0.7,
-      max_output_tokens: input.maxOutputTokens ?? 6000,
-    }),
-  });
+  const normalizeKey = (value?: string): string | undefined => {
+    if (!value) return undefined;
+    const key = value.trim();
+    if (!key) return undefined;
+    if (key === "PASTE_YOUR_GEMINI_API_KEY_HERE") return undefined;
+    return key;
+  };
 
-  const payload = await response.json().catch(() => ({}));
+  const resolvedApiKey =
+    normalizeKey(input.apiKey) ||
+    normalizeKey(PROTOTYPE_GEMINI_API_KEY) ||
+    normalizeKey(ENV_GEMINI_API_KEY) ||
+    undefined;
+
+  const request = async (apiKey?: string) => {
+    const response = await fetch(`${API_BASE_URL}/analysis/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        analysis_results: input.analysisResults,
+        api_key: apiKey,
+        temperature: input.temperature ?? 0.7,
+        max_output_tokens: input.maxOutputTokens ?? 6000,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
+  };
+
+  let { response, payload } = await request(resolvedApiKey);
+
+  if (!response.ok && resolvedApiKey) {
+    const detail = String(payload?.detail ?? "");
+    const looksLikeKeyIssue =
+      detail.includes("API 키") ||
+      detail.toLowerCase().includes("api key") ||
+      detail.includes("403") ||
+      detail.includes("reported as leaked");
+    if (looksLikeKeyIssue) {
+      const fallback = await request(undefined);
+      response = fallback.response;
+      payload = fallback.payload;
+    }
+  }
+
   if (!response.ok) {
     const detail = payload?.detail ?? "AI 피드백 생성에 실패했습니다.";
     throw new Error(typeof detail === "string" ? detail : "AI 피드백 생성에 실패했습니다.");

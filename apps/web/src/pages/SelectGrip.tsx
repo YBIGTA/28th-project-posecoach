@@ -24,28 +24,28 @@ export function SelectGrip() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-8">
+    <div className="modern-shell min-h-screen w-full flex items-center justify-center p-8">
       <div className="max-w-4xl w-full">
-        <Button variant="ghost" className="mb-8" onClick={() => navigate("/select-exercise")}>
+        <Button variant="ghost" className="mb-8 modern-outline-btn" onClick={() => navigate("/select-exercise")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           뒤로
         </Button>
 
         <h1 className="text-4xl font-bold text-center mb-4">그립 선택</h1>
-        <p className="text-center text-gray-600 mb-12">풀업 그립 유형을 선택하세요.</p>
+        <p className="text-center text-soft mb-12">풀업 그립 유형을 선택하세요.</p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {grips.map((grip) => (
             <Card
               key={grip.id}
-              className={`cursor-pointer transition-all hover:shadow-lg ${
-                selectedGrip === grip.id ? "ring-4 ring-blue-600 shadow-xl" : ""
+              className={`glass-card cursor-pointer transition-all hover:-translate-y-1 hover:shadow-xl ${
+                selectedGrip === grip.id ? "ring-2 ring-cyan-500 shadow-xl" : ""
               }`}
               onClick={() => setSelectedGrip(grip.id)}
             >
               <CardContent className="p-6">
                 <h3 className="text-xl font-bold mb-2">{grip.name}</h3>
-                <p className="text-gray-600 text-sm">{grip.description}</p>
+                <p className="text-soft text-sm">{grip.description}</p>
               </CardContent>
             </Card>
           ))}
@@ -54,7 +54,7 @@ export function SelectGrip() {
         <div className="flex justify-center mt-12">
           <Button
             size="lg"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-16 py-6 text-lg"
+            className="modern-primary-btn px-16 py-6 text-lg"
             disabled={!selectedGrip}
             onClick={handleNext}
           >

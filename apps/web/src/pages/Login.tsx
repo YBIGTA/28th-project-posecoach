@@ -46,23 +46,23 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-8">
+    <div className="modern-shell min-h-screen w-full flex items-center justify-center p-8">
       <div className="max-w-xl w-full">
-        <Button variant="ghost" className="mb-6" onClick={() => navigate("/")}>
+        <Button variant="ghost" className="mb-6 modern-outline-btn" onClick={() => navigate("/")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           뒤로
         </Button>
 
-        <Card>
+        <Card className="glass-card">
           <CardContent className="p-8">
             <h1 className="text-3xl font-bold text-center mb-2">계정</h1>
-            <p className="text-center text-gray-600 mb-8">로그인하면 분석 기록을 저장할 수 있습니다.</p>
+            <p className="text-center text-soft mb-8">로그인하면 분석 기록을 저장할 수 있습니다.</p>
 
-            <div className="grid grid-cols-2 gap-2 mb-6 bg-slate-100 rounded-lg p-1">
+            <div className="grid grid-cols-2 gap-2 mb-6 bg-slate-100/70 dark:bg-slate-800/70 rounded-lg p-1">
               <button
                 type="button"
                 className={`rounded-md py-2 text-sm font-semibold transition-colors ${
-                  mode === "login" ? "bg-white text-slate-900 shadow" : "text-slate-500"
+                  mode === "login" ? "bg-slate-900 text-slate-100 shadow" : "text-slate-400"
                 }`}
                 onClick={() => setMode("login")}
               >
@@ -71,7 +71,7 @@ export function Login() {
               <button
                 type="button"
                 className={`rounded-md py-2 text-sm font-semibold transition-colors ${
-                  mode === "register" ? "bg-white text-slate-900 shadow" : "text-slate-500"
+                  mode === "register" ? "bg-slate-900 text-slate-100 shadow" : "text-slate-400"
                 }`}
                 onClick={() => setMode("register")}
               >
@@ -81,9 +81,9 @@ export function Login() {
 
             <form className="space-y-4" onSubmit={onSubmit}>
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1">아이디</label>
+                <label className="text-sm font-medium text-slate-200 block mb-1">아이디</label>
                 <input
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   disabled={loading}
@@ -91,10 +91,10 @@ export function Login() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1">비밀번호</label>
+                <label className="text-sm font-medium text-slate-200 block mb-1">비밀번호</label>
                 <input
                   type="password"
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
@@ -104,10 +104,10 @@ export function Login() {
 
               {mode === "register" && (
                 <div>
-                  <label className="text-sm font-medium text-slate-700 block mb-1">비밀번호 확인</label>
+                  <label className="text-sm font-medium text-slate-200 block mb-1">비밀번호 확인</label>
                   <input
                     type="password"
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-3 py-2 outline-none focus:ring-2 focus:ring-orange-500"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     disabled={loading}
@@ -118,7 +118,7 @@ export function Login() {
 
               {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
 
-              <Button className="w-full" disabled={loading} type="submit">
+              <Button className="w-full modern-primary-btn" disabled={loading} type="submit">
                 {loading ? "처리 중..." : mode === "login" ? "로그인" : "계정 만들기"}
               </Button>
             </form>
