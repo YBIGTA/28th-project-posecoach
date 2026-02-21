@@ -5,7 +5,7 @@ DTW 기반 유사도 점수 모듈
 가우시안 커널로 유사도 점수(0~1)를 산출한다.
 
 피처: 관절 각도(정규화) + 정규화 좌표 혼합 (~47차원)
-라이브러리: fastdtw (O(N) 근사, radius=1)
+DTW: 순수 numpy 구현 (Sakoe-Chiba 밴드, 벡터화 쌍 거리 계산)
 """
 import json
 import logging
@@ -54,7 +54,7 @@ def extract_pushup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
             abd_r / 180.0,
             head_tilt,
             hand_offset,
-        ], dtype=np.float64)
+        ], dtype=np.float32)
     except (KeyError, TypeError, ValueError) as e:
         logger.debug(f"푸시업 각도 추출 실패: {e}")
         return None
@@ -99,7 +99,7 @@ def extract_pullup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
             shoulder_packing,
             elbow_flare,
             body_sway,
-        ], dtype=np.float64)
+        ], dtype=np.float32)
     except (KeyError, TypeError, ValueError) as e:
         logger.debug(f"풀업 각도 추출 실패: {e}")
         return None
@@ -124,7 +124,7 @@ def extract_coordinates(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
         coords = []
         for kp in _COORDINATE_KEYPOINTS:
             coords.extend(npts[kp])
-        return np.array(coords, dtype=np.float64)
+        return np.array(coords, dtype=np.float32)
     except (KeyError, TypeError) as e:
         logger.debug(f"좌표 추출 실패: {e}")
         return None
@@ -155,6 +155,47 @@ def extract_feature_vector(npts: Optional[Dict[str, List[float]]], exercise_type
     return np.concatenate([angles, coords])
 
 
+# ── DTW 핵심 함수 ────────────────────────────────────────────
+
+def _dtw_distance(seq1: np.ndarray, seq2: np.ndarray, window: int = 0) -> float:
+    """
+    순수 numpy DTW 거리 계산 (Sakoe-Chiba 밴드 지원).
+
+    Args:
+        seq1: (N, D) float32 배열
+        seq2: (M, D) float32 배열
+        window: Sakoe-Chiba 밴드 폭 (0 = 제약 없음 = 전체 DTW)
+
+    Returns:
+        DTW 거리 (float)
+    """
+    n, m = len(seq1), len(seq2)
+
+    # 전체 쌍별 L2 거리를 브로드캐스팅으로 한번에 계산 (N, M, D) → (N, M)
+    diff = seq1[:, np.newaxis, :] - seq2[np.newaxis, :, :]
+    cost = np.sqrt((diff * diff).sum(axis=-1))  # (N, M)
+
+    # 누적 비용 행렬 초기화
+    acc = np.full((n + 1, m + 1), np.inf, dtype=np.float32)
+    acc[0, 0] = 0.0
+
+    # 밴드 폭 결정: 0이면 전체 탐색, 최소한 |n-m|은 보장
+    w = window if window > 0 else max(n, m)
+    w = max(w, abs(n - m))
+
+    for i in range(1, n + 1):
+        j_lo = max(1, i - w)
+        j_hi = min(m, i + w) + 1
+        for j in range(j_lo, j_hi):
+            acc[i, j] = cost[i - 1, j - 1] + min(
+                acc[i - 1, j],      # 위 (ref 프레임 건너뜀)
+                acc[i, j - 1],      # 왼쪽 (user 프레임 건너뜀)
+                acc[i - 1, j - 1],  # 대각선 (둘 다 진행)
+            )
+
+    return float(acc[n, m])
+
+
 # ── DTW Scorer 클래스 ───────────────────────────────────────
 
 class DTWScorer:
@@ -172,22 +213,33 @@ class DTWScorer:
     # 각도 피처 차원 수 (각도만으로 DTW 비교)
     _ANGLE_DIMS = {"푸시업": 7, "풀업": 7}
 
-    def __init__(self, reference_path: str, exercise_type: str, sigma: float = 0.25):
+    def __init__(self, reference_path: str, exercise_type: str,
+                 sigma: float = 0.25, window: int = 0):
+        """
+        Args:
+            reference_path: 레퍼런스 JSON 경로
+            exercise_type: "푸시업" 또는 "풀업"
+            sigma: 가우시안 커널 sigma (클수록 점수가 너그러워짐)
+            window: Sakoe-Chiba 밴드 폭 (0 = 전체 DTW)
+        """
         self.exercise_type = exercise_type
         self.sigma = sigma
+        self.window = window
         self.active = False
+        self._n_angles = self._ANGLE_DIMS.get(exercise_type, 7)
 
-        # 레퍼런스 로드
+        # 레퍼런스 로드 — 각도 부분만 float32 2D 배열로 사전 변환
         try:
             with open(reference_path, "r", encoding="utf-8") as f:
                 ref_data = json.load(f)
-            self.reference: Dict[str, List[List[float]]] = {}
+            self._ref_angles: Dict[str, np.ndarray] = {}
             for phase, vectors in ref_data.get("phases", {}).items():
-                self.reference[phase] = [np.array(v, dtype=np.float64) for v in vectors]
-            if self.reference:
+                arr = np.array(vectors, dtype=np.float32)        # (T, 47)
+                self._ref_angles[phase] = arr[:, :self._n_angles]  # (T, 7)
+            if self._ref_angles:
                 self.active = True
                 logger.info(f"DTW 레퍼런스 로드 완료: {reference_path} "
-                            f"(phases: {list(self.reference.keys())})")
+                            f"(phases: {list(self._ref_angles.keys())})")
             else:
                 logger.warning(f"레퍼런스에 phase 데이터 없음: {reference_path}")
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
@@ -207,52 +259,48 @@ class DTWScorer:
 
         # 페이즈 전환 감지
         if phase != self._current_phase:
-            # 이전 세그먼트 평가
             if self._current_phase is not None and len(self._current_segment) >= 2:
                 self._score_segment(self._current_phase)
-            # 새 세그먼트 시작
             self._current_phase = phase
             self._current_segment = []
 
-        # 피처 축적
         if feature_vec is not None:
             self._current_segment.append(feature_vec)
 
     def _score_segment(self, phase: str):
-        """fastdtw로 세그먼트 거리 계산 → 가우시안 유사도 변환
+        """
+        numpy DTW로 세그먼트 거리 계산 → 가우시안 유사도 변환.
 
         각도 피처만 사용하여 폼 품질을 비교한다.
         좌표는 카메라 위치에 의존하므로 DTW 비교에서 제외.
         """
-        if phase not in self.reference or not self.reference[phase]:
+        if phase not in self._ref_angles:
             return
-        if len(self._current_segment) < 2:
+        ref_arr = self._ref_angles[phase]   # (T_r, 7) — 로드 시 사전 변환
+        if len(ref_arr) == 0 or len(self._current_segment) < 2:
             return
 
         try:
-            from fastdtw import fastdtw
-            from scipy.spatial.distance import euclidean
+            # 사용자 시퀀스: 각도 부분만 float32 2D 배열로 변환
+            user_arr = np.array(
+                [v[:self._n_angles] for v in self._current_segment],
+                dtype=np.float32
+            )  # (T_u, 7)
 
-            # 각도 피처만 슬라이싱 (벡터 앞쪽 N차원)
-            n_angles = self._ANGLE_DIMS.get(self.exercise_type, 7)
-            user_seq = [v[:n_angles] for v in self._current_segment]
-            ref_seq = [v[:n_angles] for v in self.reference[phase]]
-
-            distance, _ = fastdtw(user_seq, ref_seq, radius=1, dist=euclidean)
+            n, m = len(user_arr), len(ref_arr)
+            w = self.window if self.window > 0 else max(abs(n - m), int(max(n, m) * 0.2))
+            distance = _dtw_distance(user_arr, ref_arr, window=w)
 
             # 평균 거리 = 총 거리 / max(두 시퀀스 길이)
-            avg_distance = distance / max(len(user_seq), len(ref_seq))
+            avg_distance = distance / max(len(user_arr), len(ref_arr))
 
             # 가우시안 커널: similarity = exp(-(d/σ)²)
-            similarity = np.exp(-(avg_distance / self.sigma) ** 2)
+            similarity = float(np.exp(-(avg_distance / self.sigma) ** 2))
 
-            self._phase_scores[phase].append(float(similarity))
+            self._phase_scores[phase].append(similarity)
             logger.debug(f"DTW [{phase}] dist={distance:.2f}, avg={avg_distance:.4f}, "
-                         f"sim={similarity:.4f} (user={len(user_seq)}, ref={len(ref_seq)})")
+                         f"sim={similarity:.4f} (user={len(user_arr)}, ref={len(ref_arr)})")
 
-        except ImportError:
-            logger.error("fastdtw 미설치 — pip install fastdtw")
-            self.active = False
         except Exception as e:
             logger.warning(f"DTW 세그먼트 평가 실패 [{phase}]: {e}")
 
@@ -262,8 +310,8 @@ class DTWScorer:
 
         Returns:
             {
-                "overall_dtw_score": float,      # 전체 평균 DTW 유사도
-                "phase_dtw_scores": {phase: float},  # 페이즈별 평균
+                "overall_dtw_score": float,           # 전체 평균 DTW 유사도
+                "phase_dtw_scores": {phase: float},   # 페이즈별 평균
                 "phase_segment_counts": {phase: int}, # 페이즈별 세그먼트 수
             }
         """
