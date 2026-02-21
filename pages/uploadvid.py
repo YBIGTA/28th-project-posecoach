@@ -184,6 +184,12 @@ if start_analysis and can_proceed:
         from video_preprocess import extract_frames
         from extract_yolo_frames import process_single_frame
         from utils.keypoints import load_pose_model
+        from utils.activity_segment import (
+            detect_active_frame_indices,
+            resolve_activity_model_path,
+            apply_pushup_rule_first_filter,
+            apply_pullup_rule_first_filter,
+        )
         from ds_modules import compute_virtual_keypoints, normalize_pts, KeypointSmoother, PushUpCounter, PullUpCounter
         from ds_modules.phase_detector import create_phase_detector, extract_phase_metric
         from ds_modules.posture_evaluator_phase import PushUpEvaluator, PullUpEvaluator
@@ -283,56 +289,97 @@ if start_analysis and can_proceed:
             dtw_active = dtw_scorer.active
             
             frame_scores, error_frames = [], []
-            total_frames = len(all_keypoints)  # ✅ 총 프레임 수
-            
-            # ✅ 수정된 부분: counter.update 호출 방식 변경
-            for i, kp_data in enumerate(all_keypoints):
-                pts = kp_data["pts"]
-                flat = compute_virtual_keypoints(pts)
+            total_frames = len(all_keypoints)
+            use_ml_filter = True
+            exercise_tag = "pushup" if isinstance(counter, PushUpCounter) else "pullup"
+            model_path = resolve_activity_model_path(exercise_tag)
+            active_frame_indices, filter_meta = detect_active_frame_indices(
+                frame_files,
+                extract_fps=extract_fps,
+                use_ml=use_ml_filter,
+                model_path=model_path,
+                min_keep_ratio=0.35,
+                return_details=True,
+            )
+            if not active_frame_indices:
+                active_frame_indices = set(range(total_frames))
+                filter_meta = {"method": "fallback_all", "reason": "no active frames selected"}
+
+            npts_sequence = []
+            phase_sequence = []
+            for kp_data in all_keypoints:
+                flat = compute_virtual_keypoints(kp_data["pts"])
                 smoothed = smoother.smooth(flat)
                 npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
                 phase_metric = extract_phase_metric(npts, exercise_type)
                 current_phase = phase_detector.update(phase_metric) if phase_metric is not None else phase_detector.phase
-                
-                # ✅ 영상 끝: 진행 중 rep 마무리 후 종료
+                npts_sequence.append(npts)
+                phase_sequence.append(current_phase)
+
+            if exercise_tag == "pushup":
+                rule_selected, rule_meta = apply_pushup_rule_first_filter(
+                    npts_sequence=npts_sequence,
+                    phase_sequence=phase_sequence,
+                    ml_selected_indices=active_frame_indices,
+                    min_keep_ratio=0.08,
+                )
+            else:
+                rule_selected, rule_meta = apply_pullup_rule_first_filter(
+                    npts_sequence=npts_sequence,
+                    ml_selected_indices=active_frame_indices,
+                    min_keep_ratio=0.08,
+                )
+
+            if rule_selected:
+                active_frame_indices = set(rule_selected)
+                filter_meta = {
+                    "method": f"rule_first_{exercise_tag}_ml_fallback",
+                    "reason": rule_meta.get("reason", ""),
+                }
+
+            for i, kp_data in enumerate(all_keypoints):
+                pts = kp_data["pts"]
+                npts = npts_sequence[i]
+                current_phase = phase_sequence[i]
+
+                was_active = counter.is_active
+                counter.update(npts, current_phase)
+
+                # Keep existing tail-rep finalize behavior.
                 if i == total_frames - 1 and counter.is_active:
                     if len(counter.visited_phases & counter.required_sequence) >= counter.min_required:
                         counter.count += 1
                     counter.is_active = False
-                
-                # ✅ 핵심 수정: is_active 체크 후 evaluator 실행
-                if counter.is_active:
+
+                is_analysis_active = was_active or counter.is_active
+                if is_analysis_active and i in active_frame_indices:
                     res = evaluator.evaluate(npts, phase=current_phase)
-                    
-                    # DTW 피처 축적
+
                     if dtw_active:
                         feat_vec = extract_feature_vector(npts, exercise_type)
                         dtw_scorer.accumulate(feat_vec, current_phase)
-                    
-                    # 카운터 업데이트 (파라미터 제거)
-                    counter.update(npts, current_phase)
-                    
+
                     frame_scores.append({
-                        "frame_idx": i, 
-                        "phase": current_phase, 
-                        "score": res["score"], 
+                        "frame_idx": i,
+                        "phase": current_phase,
+                        "score": res["score"],
                         "errors": res["errors"],
-                        "details": res["details"]
+                        "details": res["details"],
                     })
-                    
-                    if res["errors"] and res["errors"] != ["키포인트 없음"]:
-                        error_frames.append({
-                            "frame_idx": i, 
-                            "img_path": kp_data["img_path"], 
-                            "phase": current_phase, 
-                            "score": res["score"], 
-                            "errors": res["errors"], 
-                            "details": res["details"], 
-                            "pts": pts
-                        })
-                else:
-                    # is_active 전환 체크용
-                    counter.update(npts, current_phase)
+
+                    if res["errors"]:
+                        single_error = res["errors"][0] if len(res["errors"]) == 1 else ""
+                        is_missing = ("없음" in single_error) or ("no keypoint" in single_error.lower())
+                        if not is_missing:
+                            error_frames.append({
+                                "frame_idx": i,
+                                "img_path": kp_data["img_path"],
+                                "phase": current_phase,
+                                "score": res["score"],
+                                "errors": res["errors"],
+                                "details": res["details"],
+                                "pts": pts,
+                            })
 
         # ✅ DTW 결과 산출
         dtw_result = dtw_scorer.finalize() if dtw_active else None
@@ -348,6 +395,10 @@ if start_analysis and can_proceed:
             "fps": extract_fps, 
             "keypoints": all_keypoints, 
             "total_frames": len(frame_files), 
+            "analysis_target_frames": len(active_frame_indices),
+            "filter_method": filter_meta.get("method", ""),
+            "filter_reason": filter_meta.get("reason", ""),
+            "filter_model_path": str(model_path),
             "success_count": success_count,
             "resolution": list(TARGET_RESOLUTION),
             "dtw_result": dtw_result,
