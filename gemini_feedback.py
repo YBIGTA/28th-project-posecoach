@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # ※ 모듈 로드 시점이 아닌 generate_feedback() 호출 시점에 읽으므로
 #   여기서는 기본값만 선언합니다.
-GEMINI_MODEL: str = "gemini-2.0-flash"  # 모델 변경 가능: gemini-1.5-pro, gemini-2.0-flash 등
+GEMINI_MODEL: str = "gemini-2.5-flash"  # 모델 변경 가능: gemini-1.5-pro, gemini-2.0-flash 등
 GEMINI_API_URL: str = (
     f"https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -50,6 +50,7 @@ AI 영상 분석 시스템이 추출한 운동 자세 데이터를 바탕으로
 5. 전체 총평은 3~5문장으로 마무리하세요.
 6. 마크다운 형식(##, **볼드**, - 목록)을 활용하세요.
 7. DTW 유사도 점수가 있으면 모범 영상 대비 유사도를 언급하세요.
+8. 모든 내용을 생략하지 말고, 분석 결과를 최대한 활용하여 풍부한 피드백을 작성하세요.
 """
 
 # 아래 {중괄호} 변수들은 코드에서 자동으로 치환됩니다. 수정 시 유지하세요.

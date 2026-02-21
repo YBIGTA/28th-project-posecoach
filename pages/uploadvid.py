@@ -404,7 +404,7 @@ if start_analysis and can_proceed:
             "dtw_result": dtw_result,
             "dtw_active": dtw_active,
         }
-        st.switch_page("pages/results.py")
+        st.switch_page("pages/results_with_feedback.py")
 
     except Exception as e:
         modal_placeholder.empty()
