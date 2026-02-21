@@ -9,17 +9,28 @@ import base64
 
 st.set_page_config(page_title="AI Pose Coach", page_icon="🏋️", layout="wide")
 
-# ---------- 배경 이미지 base64 변환 ----------
-def get_base64_image(img_path):
-    with open(img_path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-# 배경 이미지 경로 (수정 가능)
+# ---------- 배경 이미지 base64 변환 (없으면 None) ----------
 BASE_DIR = Path(__file__).resolve().parent
 BG_IMAGE = BASE_DIR.parent / "assets" / "hero.png"
 
-bg_base64 = get_base64_image(BG_IMAGE) if BG_IMAGE.exists() else ""
+def get_base64_image(img_path: Path):
+    """이미지를 base64로 인코딩. 파일이 없으면 None 반환."""
+    try:
+        with open(img_path, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except FileNotFoundError:
+        return None
+
+bg_base64 = get_base64_image(BG_IMAGE)
+
+# ---------- 배경 스타일 결정 ----------
+if bg_base64:
+    # hero.png가 있으면 이미지 배경 사용
+    bg_style = f'background-image: url("data:image/png;base64,{bg_base64}"); background-size: cover; background-position: center; background-attachment: fixed;'
+else:
+    # 없으면 어두운 그라디언트 폴백
+    bg_style = "background: linear-gradient(135deg, #0a0c12 0%, #1a1f2e 40%, #0e1117 100%);"
 
 # ---------- Custom CSS ----------
 st.markdown(f"""
@@ -38,10 +49,7 @@ st.markdown(f"""
     }}
 
     .stApp {{
-        background-image: url("data:image/jpg;base64,{bg_base64}");
-        background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
+        {bg_style}
     }}
 
     .overlay {{
@@ -54,11 +62,10 @@ st.markdown(f"""
         z-index: 0;
     }}
 
-    /* 중앙 컨텐츠 섹션 */
     .hero {{
         position: relative;
         z-index: 2;
-        padding-top: 25vh; /* 화면 상단에서의 위치 */
+        padding-top: 25vh;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -71,20 +78,19 @@ st.markdown(f"""
         font-size: 6rem;
         font-weight: 300;
         letter-spacing: 6px;
-        margin-bottom: 0.5rem; /* 타이틀 아래 간격 줄임 */
+        margin-bottom: 0.5rem;
     }}
 
     .hero-sub {{
         font-size: 1.3rem;
         letter-spacing: 2px;
-        margin-bottom: 1.5rem; /* 서브타이틀과 버튼 사이 간격 대폭 줄임 */
+        margin-bottom: 1.5rem;
     }}
 
-    /* ⭐ Streamlit 실제 버튼 스타일링 ⭐ */
     div.stButton > button {{
         background-color: #e7e3c4 !important;
         color: #1c1c1c !important;
-        border-radius: 50px !important; /* 버튼 둥글게 */
+        border-radius: 50px !important;
         padding: 0.7rem 3rem !important;
         font-size: 1.2rem !important;
         font-weight: 600 !important;
@@ -99,10 +105,9 @@ st.markdown(f"""
         transform: translateY(-3px) !important;
         box-shadow: 0 10px 20px rgba(0,0,0,0.2) !important;
     }}
-    
-    /* 버튼 컨테이너 위치 미세 조정 */
+
     .button-container {{
-        margin-top: -10px; 
+        margin-top: -10px;
     }}
 </style>
 
@@ -116,7 +121,6 @@ st.markdown(f"""
 
 
 # ---------- 버튼 섹션 ----------
-# col2의 폭을 조절하여 버튼의 가로 길이를 제한할 수 있습니다.
 col1, col2, col3 = st.columns([1.5, 1, 1.5])
 
 with col2:
