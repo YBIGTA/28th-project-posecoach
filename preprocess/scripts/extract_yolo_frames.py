@@ -18,16 +18,16 @@ from config import OUT_FRAMES_DIR, OUT_FRAMES_YP_DIR, FRAME_EXTRACT_FPS
 from utils.keypoints import load_pose_model, yolo_result_to_dict
 
 def process_single_frame(model, img_path):
-    """단일 프레임에서 YOLO26n-pose 키포인트를 추출하여 dict로 반환한다."""
     img = cv2.imread(str(img_path))
     if img is None:
         return None
-
-    results = model(img, verbose=False)
-    if not results or len(results) == 0:
-        return None
-
-    return yolo_result_to_dict(results[0])
+    try:
+        results = model(img, verbose=False)
+        if not results or len(results) == 0:
+            return None
+        return yolo_result_to_dict(results[0])
+    finally:
+        del img
 
 
 def process_video_frames(video_dir, model, save_root):

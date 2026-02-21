@@ -17,3 +17,5 @@ preprocess/data/
 ds_modules/reference_*.json
 
 assets
+
+.env
