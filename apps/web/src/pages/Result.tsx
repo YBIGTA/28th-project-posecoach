@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import {
   AlertTriangle,
@@ -510,8 +512,22 @@ export function Result() {
               ) : null}
 
               {geminiFeedback ? (
-                <div className="rounded-lg border border-slate-700 bg-slate-900/65 px-4 py-4 text-sm whitespace-pre-wrap leading-7">
-                  {geminiFeedback}
+                <div className="rounded-lg border border-slate-700 bg-slate-900/65 px-5 py-5 text-slate-100">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h2: (props) => <h2 className="mt-6 mb-3 text-xl md:text-2xl font-bold text-slate-50" {...props} />,
+                      h3: (props) => <h3 className="mt-5 mb-2 text-lg md:text-xl font-semibold text-slate-100" {...props} />,
+                      p: (props) => <p className="mb-3 text-sm md:text-base leading-7 text-slate-200" {...props} />,
+                      ul: (props) => <ul className="mb-4 list-disc pl-5 space-y-1 text-sm md:text-base text-slate-200" {...props} />,
+                      ol: (props) => <ol className="mb-4 list-decimal pl-5 space-y-1 text-sm md:text-base text-slate-200" {...props} />,
+                      li: (props) => <li className="leading-7" {...props} />,
+                      strong: (props) => <strong className="font-extrabold text-slate-50" {...props} />,
+                      hr: (props) => <hr className="my-5 border-slate-700" {...props} />,
+                    }}
+                  >
+                    {geminiFeedback}
+                  </ReactMarkdown>
                 </div>
               ) : (
                 <p className="text-sm text-soft">아직 생성된 AI 종합 피드백이 없습니다.</p>
@@ -577,21 +593,9 @@ export function Result() {
               className="w-full mb-6 accent-cyan-600"
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-soft mb-2">원본 프레임</p>
-                {currentImageUrl ? (
-                  <img src={currentImageUrl} alt="원본 프레임" className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-black" />
-                ) : (
-                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-sm text-soft p-10 text-center">
-                    프레임 이미지를 불러올 수 없습니다.
-                  </div>
-                )}
-              </div>
-              <div>
-                <p className="text-sm text-soft mb-2">스켈레톤 오버레이</p>
-                <SkeletonPreview imageUrl={currentImageUrl} keypoints={currentKeypoint?.pts} showOverlay={showOverlay} />
-              </div>
+            <div>
+              <p className="text-sm text-soft mb-2">스켈레톤 오버레이</p>
+              <SkeletonPreview imageUrl={currentImageUrl} keypoints={currentKeypoint?.pts} showOverlay={showOverlay} />
             </div>
 
             {currentScore ? (
