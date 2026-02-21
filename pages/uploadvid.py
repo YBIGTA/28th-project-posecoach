@@ -290,12 +290,13 @@ if start_analysis and can_proceed:
                 phase_metric = extract_phase_metric(npts, exercise_type)
                 current_phase = phase_detector.update(phase_metric) if phase_metric is not None else 'ready'
                 
-                # ✅ 영상 끝 10프레임이면 강제 종료
-                if i >= total_frames - 10 and counter.is_active:
-                    counter.is_active = False
+                # Update activity state before evaluation.
                 
                 # ✅ 핵심 수정: is_active 체크 후 evaluator 실행
-                if counter.is_active and i in active_frame_indices:
+                was_active = counter.is_active
+                counter.update(npts, current_phase)
+                is_analysis_active = was_active or counter.is_active
+                if is_analysis_active and i in active_frame_indices:
                     res = evaluator.evaluate(npts, phase=current_phase)
                     
                     # DTW 피처 축적
@@ -303,8 +304,7 @@ if start_analysis and can_proceed:
                         feat_vec = extract_feature_vector(npts, exercise_type)
                         dtw_scorer.accumulate(feat_vec, current_phase)
                     
-                    # 카운터 업데이트 (파라미터 제거)
-                    counter.update(npts, current_phase)
+
                     
                     frame_scores.append({
                         "frame_idx": i, 
@@ -324,9 +324,6 @@ if start_analysis and can_proceed:
                             "details": res["details"], 
                             "pts": pts
                         })
-                else:
-                    # is_active 전환 체크용
-                    counter.update(npts, current_phase)
 
         # ✅ DTW 결과 산출
         dtw_result = dtw_scorer.finalize() if dtw_active else None
