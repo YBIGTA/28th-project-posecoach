@@ -1,213 +1,331 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-
-import { ArrowLeft, CheckCircle2, Loader2, Upload, Video } from "lucide-react";
-
-import { Button } from "../components/ui/button";
-import { Card, CardContent } from "../components/ui/card";
+import { Dumbbell } from "lucide-react";
 import { analyzeVideo } from "../lib/api";
 import { getSession } from "../lib/auth";
+import { Button } from "../components/ui/button";
 
-type UploadVideoState = {
-  exercise?: "pushup" | "pullup";
-  grip?: string;
-  referenceFile?: File;
-};
+type RouteState = { exercise?: "pushup" | "pullup"; grip?: string };
+
+const STEPS = ["운동 선택", "영상 업로드", "결과 확인"];
+
+const TIPS = [
+  "운동 많이 된다",
+  "오늘 스트레스 많이 받을거야",
+  "그런 스트레스도 필요하다",
+  "진짜 도움 많이 되고 있어",
+  "말 안하지만 지금 스트레스 되게 받는다",
+  "오늘 자기 전에 생각 많이 날거야",
+  "한판 쉴래? 근데 남들은 안쉬어",
+  "상대 세게 나온다",
+  "스트롱 스트롱",
+  "굿 파트너",
+  "예술이다 예술",
+  "대화가 된다",
+  "올라잇",
+  "Light weight baby",
+];
+
+function StepBar({ current }: { current: number }) {
+  return (
+    <div className="flex items-center py-6">
+      {STEPS.map((s, i) => (
+        <div key={s} className={`flex items-center ${i < STEPS.length - 1 ? "flex-1" : ""}`}>
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold
+              ${
+                i < current
+                  ? "bg-[#c8f135]/10 border border-[#c8f135]/40 text-[#c8f135]"
+                  : i === current
+                  ? "bg-[#c8f135] text-black"
+                  : "bg-white/5 border border-white/10 text-white/30"
+              }`}
+            >
+              {i < current ? "✓" : i + 1}
+            </div>
+            <span className={`${i === current ? "text-[#c8f135]" : "text-white/40"} text-[12px] tracking-wide`}>
+              {s}
+            </span>
+          </div>
+          {i < STEPS.length - 1 && (
+            <div className={`flex-1 h-px mx-4 ${i < current ? "bg-[#c8f135]/40" : "bg-white/10"}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function UploadVideo() {
   const navigate = useNavigate();
   const location = useLocation();
-  const routeState = (location.state ?? {}) as UploadVideoState;
+  const session = useMemo(() => getSession(), []);
+  const { exercise = "pushup", grip } = (location.state ?? {}) as RouteState;
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [messageIndex, setMessageIndex] = useState(0);
+  const [mainFile, setMainFile] = useState<File | null>(null);
+  const [mainUrl, setMainUrl] = useState<string | null>(null);
+  const [refFile, setRefFile] = useState<File | null>(null);
+  const [refUrl, setRefUrl] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [tipIdx, setTipIdx] = useState(0);
 
-  const exercise = routeState.exercise ?? "pushup";
-  const grip = routeState.grip;
-  const session = getSession();
-
-  const rotatingMessages = [
-    "팁: 코어에 힘을 주고 몸통을 일직선으로 유지하세요.",
-    "\"오늘의 1%가 내일의 100%를 만든다.\"",
-    "팁: 반동보다 통제된 속도로 움직여야 자세가 좋아집니다.",
-    "\"꾸준함은 재능을 이긴다.\"",
-    "팁: 내려갈 때 들이마시고, 올라올 때 내쉬세요.",
-    "\"완벽보다 반복이 강하다.\"",
-  ];
+  // ✅ FPS 사용자 설정 (default=10)
+  const [fps, setFps] = useState<number>(10);
 
   useEffect(() => {
-    if (!isAnalyzing) return;
-    setMessageIndex(0);
-    const timer = window.setInterval(() => {
-      setMessageIndex((prev) => (prev + 1) % rotatingMessages.length);
-    }, 2300);
-    return () => window.clearInterval(timer);
-  }, [isAnalyzing]);
+    if (!mainFile) { setMainUrl(null); return; }
+    const url = URL.createObjectURL(mainFile);
+    setMainUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [mainFile]);
 
-  const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith("video/")) return;
-    setSelectedFile(file);
-    setErrorMessage(null);
-  };
+  useEffect(() => {
+    if (!refFile) { setRefUrl(null); return; }
+    const url = URL.createObjectURL(refFile);
+    setRefUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [refFile]);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
-  };
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileSelect(file);
-  };
+  useEffect(() => {
+    if (!analyzing) return;
+    setTipIdx(0);
+    const t = setInterval(() => setTipIdx(p => (p + 1) % TIPS.length), 2500);
+    return () => clearInterval(t);
+  }, [analyzing]);
 
   const handleAnalyze = async () => {
-    if (!selectedFile || isAnalyzing) return;
+    if (!mainFile || analyzing) return;
+    setAnalyzing(true);
 
-    setIsAnalyzing(true);
-    setErrorMessage(null);
+    const safeFps = Number.isFinite(fps) ? Math.min(30, Math.max(10, Math.round(fps))) : 10;
 
-    try {
-      const payload = await analyzeVideo({
-        videoFile: selectedFile,
-        exerciseType: exercise,
-        gripType: grip,
-        extractFps: 10,
-        saveResult: !!session,
-        userId: session?.user_id,
-      });
+    const result = await analyzeVideo({
+      videoFile: mainFile,
+      referenceFile: refFile ?? undefined,
+      exerciseType: exercise,
+      gripType: grip,
+      extractFps: safeFps, // ✅ 사용자 설정 FPS
+      saveResult: !!session,
+      userId: session?.user_id,
+    });
 
-      navigate("/result", {
-        state: {
-          exercise,
-          grip,
-          referenceFile: routeState.referenceFile,
-          videoFile: selectedFile,
-          analysisResults: payload.analysis_results,
-          savedWorkoutId: payload.saved_workout_id ?? null,
-        },
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "분석에 실패했습니다";
-      setErrorMessage(message);
-      setIsAnalyzing(false);
-    }
+    navigate("/result", {
+      state: {
+        exercise,
+        grip,
+        analysisResults: result.analysis_results,
+      },
+    });
   };
 
+  const exLabel = exercise === "pullup" ? "풀업" : "푸시업";
+
   return (
-    <div className="modern-shell min-h-screen w-full flex items-center justify-center p-8">
-      <div className="max-w-3xl w-full">
-        <Button variant="ghost" className="mb-8 modern-outline-btn" onClick={() => navigate(-1)} disabled={isAnalyzing}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          뒤로
-        </Button>
+    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex items-center justify-center px-6 py-10">
+      <div className="w-full max-w-[1400px] rounded-[30px] border border-white/10 bg-[#0f1116]/80 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden">
 
-        <div className="mb-12 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-            <Video className="w-8 h-8 text-green-600" />
+        {/* ── HEADER (Home 통일) ── */}
+        <header className="flex items-center justify-between px-8 py-6 border-b border-white/10 backdrop-blur-xl bg-black/40">
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center gap-2 font-extrabold tracking-widest text-white"
+          >
+            <Dumbbell className="w-5 h-5 text-[#c8f135]" />
+            POSECOACH
+          </button>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 border-white/10 text-white/60 hover:text-[#c8f135] hover:border-[#c8f135]/40 hover:bg-[#c8f135]/10"
+              onClick={() => navigate("/select-exercise")}
+            >
+              ← 뒤로
+            </Button>
+
+            {session && (
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-8 px-3 border-[#c8f135]/40 text-[#c8f135] hover:bg-[#c8f135]/10"
+        onClick={() => navigate("/mypage")}
+      >
+        마이페이지
+      </Button>
+    )}
           </div>
-          <h1 className="text-4xl font-bold mb-4">운동 영상 업로드</h1>
-          <p className="text-soft mb-2">분석할 영상을 업로드하세요.</p>
-          <p className="text-sm text-soft">
-            선택한 운동: <span className="font-semibold">{exercise === "pullup" ? "풀업" : "푸시업"}</span>
-            {grip && <span> - {grip}</span>}
-          </p>
-        </div>
+        </header>
 
-        {isAnalyzing ? (
-          <Card className="glass-card">
-            <CardContent className="p-16">
-              <div className="flex flex-col items-center text-center">
-                <Loader2 className="w-16 h-16 text-blue-600 animate-spin mb-6" />
-                <h2 className="text-2xl font-bold mb-2">영상 분석 중...</h2>
-                <p className="text-soft">포즈 추출과 자세 평가를 진행하고 있습니다.</p>
-                <div className="mt-6 rounded-lg border border-slate-700 bg-slate-900/85 px-5 py-4 max-w-xl w-full">
-                  <p className="text-sm font-semibold text-orange-300 mb-1">운동 팁/명언</p>
-                  <p className="text-sm text-slate-100 whitespace-pre-wrap">
-                    {rotatingMessages[messageIndex]}
-                  </p>
+        {/* CONTENT */}
+        <div className="px-10 py-12">
+
+          <StepBar current={1} />
+
+          {/* 타이틀 */}
+          <div className="text-center mt-10 mb-8">
+            <div className="text-[#c8f135] text-xs tracking-widest mb-2">STEP 2</div>
+            <h1 className="text-[clamp(2rem,4vw,3rem)] font-extrabold">영상 업로드</h1>
+            <p className="text-white/40 text-sm mt-3">
+              분석을 위한 영상을 업로드하세요.
+            </p>
+          </div>
+
+          {/* ✅ FPS 설정 + ✅ 활성 배지 (설정 요약 박스 제거하고 여기로 이동/확대) */}
+          <div className="max-w-[1000px] mx-auto mb-12">
+            {/* FPS 컨트롤 */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 mb-6">
+              <div className="flex items-center justify-between gap-6 flex-wrap">
+                <div className="flex flex-col gap-1">
+                  <div className="text-sm font-semibold text-white/80">FPS 설정</div>
+                  <div className="text-xs text-white/40">프레임 추출 속도 (1~30, 기본 10)</div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={fps}
+                    onChange={(e) => setFps(Number(e.target.value))}
+                    className="w-20 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 outline-none focus:border-[#c8f135]/40"
+                  />
+                  <span className="text-white/40 text-sm">fps</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            <Card className="glass-card">
-              <CardContent className="p-8">
-                <div
-                  className={`border-2 border-dashed rounded-lg p-12 text-center transition-all ${
-                    isDragging
-                      ? "border-green-600 bg-green-50/80 dark:bg-green-900/20"
-                      : selectedFile
-                        ? "border-green-600 bg-green-50/80 dark:bg-green-900/20"
-                        : "border-gray-300 dark:border-slate-700 hover:border-green-400"
-                  }`}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                >
-                  {selectedFile ? (
-                    <div className="flex flex-col items-center">
-                      <CheckCircle2 className="w-16 h-16 text-green-600 mb-4" />
-                      <p className="text-lg font-semibold mb-2">{selectedFile.name}</p>
-                      <p className="text-soft mb-4">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                      <Button variant="outline" className="modern-outline-btn" onClick={() => fileInputRef.current?.click()}>
-                        다른 파일 선택
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center">
-                      <Upload className="w-16 h-16 text-gray-400 dark:text-slate-500 mb-4" />
-                      <p className="text-lg font-semibold mb-2">영상을 드래그하거나 클릭해 업로드하세요</p>
-                      <p className="text-soft mb-4">MP4, MOV, AVI, WEBM</p>
-                      <Button className="modern-primary-btn" onClick={() => fileInputRef.current?.click()}>파일 선택</Button>
-                    </div>
-                  )}
 
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="video/*"
-                    className="hidden"
-                    onChange={handleFileInputChange}
-                  />
+              <div className="mt-5">
+                <input
+                  type="range"
+                  min={1}
+                  max={30}
+                  value={fps}
+                  onChange={(e) => setFps(Number(e.target.value))}
+                  className="w-full accent-[#c8f135]"
+                />
+                <div className="flex justify-between text-[11px] text-white/25 mt-2">
+                  <span>1</span>
+                  <span>10</span>
+                  <span>20</span>
+                  <span>30</span>
                 </div>
-              </CardContent>
-            </Card>
-
-            {errorMessage && (
-              <p className="mt-4 text-center text-sm text-red-600">
-                {errorMessage}
-              </p>
-            )}
-
-            <div className="flex justify-center mt-8">
-              <Button
-                size="lg"
-                className="modern-primary-btn px-16 py-6 text-lg"
-                disabled={!selectedFile}
-                onClick={handleAnalyze}
-              >
-                분석 시작
-              </Button>
+              </div>
             </div>
-          </>
-        )}
+
+            {/* 활성 배지 (크기 업) */}
+            <div className="flex justify-center gap-3 flex-wrap">
+              <span className="text-sm px-5 py-2 rounded-xl bg-[#c8f135]/10 border border-[#c8f135]/30 text-[#c8f135]">
+                {exLabel} {grip && `· ${grip}`}
+              </span>
+
+              <span className="text-sm px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-white/70">
+                FPS · <span className="text-[#c8f135] font-semibold">{Math.round(fps)}</span>
+              </span>
+
+              {refFile && (
+                <span className="text-sm px-5 py-2 rounded-xl bg-[#5b8fff]/10 border border-[#5b8fff]/30 text-[#5b8fff]">
+                  ≋ DTW 활성
+                </span>
+              )}
+
+              <span className="text-sm px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60">
+                기록 저장 · {session ? "자동 저장" : "비로그인"}
+              </span>
+            </div>
+          </div>
+
+          {/* 2열 업로드 */}
+          <div className="grid md:grid-cols-2 gap-10 max-w-[1200px] mx-auto mb-14">
+
+            {/* 사용자 영상 */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <div className="font-bold text-lg mb-1">사용자 영상</div>
+                  <div className="text-xs text-white/40">분석 대상 (필수)</div>
+                </div>
+                <span className="text-[12px] px-3 py-1 rounded-md bg-[#ff6b35]/10 border border-[#ff6b35]/30 text-[#ff6b35]">
+                  필수
+                </span>
+              </div>
+              {!mainFile ? (
+                <label className="cursor-pointer block text-center py-20 border-2 border-dashed border-white/10 rounded-xl hover:border-[#c8f135]/40 transition text-white/40 text-sm">
+                  영상 업로드
+                  <input
+                    type="file"
+                    hidden
+                    accept="video/*"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) setMainFile(f);
+                    }}
+                  />
+                </label>
+              ) : (
+                <video src={mainUrl ?? undefined} controls className="rounded-xl w-full" />
+              )}
+            </div>
+
+            {/* 레퍼런스 영상 */}
+            <div className="rounded-2xl border border-[#5b8fff]/30 bg-[#5b8fff]/5 p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <div className="font-bold text-lg mb-1">레퍼런스 영상</div>
+                  <div className="text-xs text-white/40">DTW 비교용 (선택)</div>
+                </div>
+                <span className="text-[12px] px-3 py-1 rounded-md bg-[#5b8fff]/10 border border-[#5b8fff]/30 text-[#5b8fff]">
+                  선택
+                </span>
+              </div>
+              {!refFile ? (
+                <label className="cursor-pointer block text-center py-20 border-2 border-dashed border-[#5b8fff]/30 rounded-xl hover:border-[#5b8fff]/60 transition text-white/40 text-sm">
+                  모범 동작 업로드
+                  <input
+                    type="file"
+                    hidden
+                    accept="video/*"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) setRefFile(f);
+                    }}
+                  />
+                </label>
+              ) : (
+                <video src={refUrl ?? undefined} controls className="rounded-xl w-full" />
+              )}
+            </div>
+
+          </div>
+
+          {/* 분석 버튼 */}
+          <div className="flex justify-center">
+            <Button
+              disabled={!mainFile || analyzing}
+              onClick={handleAnalyze}
+              className="bg-[#c8f135] text-black hover:bg-[#b4da30] px-16 py-6 text-sm"
+            >
+              분석 시작하기
+            </Button>
+          </div>
+
+        </div>
       </div>
+
+      {/* 분석 중 오버레이 */}
+      {analyzing && (
+        <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-50">
+          <div className="bg-[#111] border border-[#c8f135]/30 rounded-2xl p-12 text-center max-w-md w-[90%]">
+            <div className="text-[#c8f135] text-2xl mb-4 animate-pulse">분석 중...</div>
+            <div className="text-white/40 text-sm mb-6">포즈 추출 및 자세 평가를 진행하고 있습니다.</div>
+
+            {/* ✅ TIPS 폰트 키움 */}
+            <div className="text-white/70 text-lg font-semibold">
+              {TIPS[tipIdx]}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

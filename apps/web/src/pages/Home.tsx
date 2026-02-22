@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-
-import { ArrowRight, Dumbbell, PlayCircle, Sparkles, Trophy } from "lucide-react";
-
+import {
+  ArrowRight,
+  Dumbbell,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "../components/ui/button";
 import { clearSession, getSession } from "../lib/auth";
 
@@ -11,35 +13,36 @@ export function Home() {
   const session = useMemo(() => getSession(), []);
 
   return (
-    <div className="modern-shell min-h-screen w-full px-0 py-6 md:px-0 md:py-8">
-      <div className="mx-auto max-w-[1400px] overflow-hidden rounded-[30px] border border-slate-700/50 bg-[#0f1116] text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
-        <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 md:px-9 md:py-7">
+    <div className="min-h-screen w-full bg-[#0a0a0a] text-white">
+      <div className="mx-auto max-w-[1400px] overflow-hidden rounded-[30px] border border-white/10 bg-[#0f1116]/80 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+        
+        {/* ── HEADER ── */}
+        <header className="flex items-center justify-between px-8 py-6 border-b border-white/10 backdrop-blur-xl bg-black/40">
           <button
-            type="button"
             onClick={() => navigate("/")}
-            className="inline-flex items-center gap-2 text-sm font-extrabold tracking-[0.12em] text-white"
+            className="flex items-center gap-2 font-extrabold tracking-widest text-white"
           >
-            <Dumbbell className="w-4 h-10 text-orange-400" />
+            <Dumbbell className="w-5 h-5 text-[#c8f135]" />
             POSECOACH
           </button>
 
-          <nav className="hidden lg:flex items-center gap-6 text-[11px] uppercase tracking-wide text-slate-400">
-            <span>Workouts</span>
-            <span>Programs</span>
-            <span>Insights</span>
-            <span>Community</span>
-          </nav>
-
           {session ? (
-            <div className="flex items-center gap-2">
-              <span className="hidden sm:block text-xs text-slate-300">{session.username}</span>
-              <Button size="sm" variant="outline" className="modern-outline-btn h-8 px-3" onClick={() => navigate("/mypage")}>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-white/40">
+                {session.username}
+              </span>
+
+              <Button
+                variant="outline"
+                className="border-[#c8f135]/40 text-[#c8f135] hover:bg-[#c8f135]/10"
+                onClick={() => navigate("/mypage")}
+              >
                 마이페이지
               </Button>
+
               <Button
-                size="sm"
                 variant="outline"
-                className="modern-outline-btn h-8 px-3"
+                className="border-red-400/30 text-red-400 hover:bg-red-400/10"
                 onClick={() => {
                   clearSession();
                   window.location.reload();
@@ -49,107 +52,166 @@ export function Home() {
               </Button>
             </div>
           ) : (
-            <Button size="sm" variant="outline" className="modern-outline-btn h-8 px-3" onClick={() => navigate("/login")}>
+            <Button
+              variant="outline"
+              className="border-[#c8f135]/40 text-[#c8f135] hover:bg-[#c8f135]/10"
+              onClick={() => navigate("/login")}
+            >
               로그인
             </Button>
           )}
         </header>
 
-        <section className="px-6 pb-8 md:px-9 md:pb-11">
-          <div className="grid items-end gap-9 lg:grid-cols-[1.03fr_0.97fr]">
-            <div className="animate-rise">
-              <span className="hero-chip mb-6">
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+        {/* ── HERO ── */}
+        <section className="px-10 py-20 relative overflow-hidden">
+          {/* 배경 라임 글로우 */}
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-[radial-gradient(circle,rgba(200,241,53,0.07)_0%,transparent_70%)] pointer-events-none" />
+
+          <div className="grid md:grid-cols-2 items-center gap-16 relative z-10">
+            {/* LEFT TEXT */}
+            <div>
+              <div className="inline-flex items-center gap-2 px-4 py-1 text-xs border border-[#c8f135]/30 bg-[#c8f135]/10 rounded-full text-[#c8f135] mb-6">
+                <Sparkles className="w-3 h-3" />
                 AI 자세 코칭
-              </span>
-
-              <h1 className="text-[clamp(2.5rem,8vw,6rem)] leading-[0.95] font-extrabold tracking-tight text-white">
-                운동을
-                <br />
-                함께 완성해요
-              </h1>
-
-              <p className="mt-6 max-w-xl text-sm md:text-base text-slate-300">
-                푸시업과 풀업 영상을 업로드하면 프레임 단위 자세 점수, 반복 횟수, 교정 피드백을 한 번에 제공합니다.
-              </p>
-
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="lg" className="modern-primary-btn rounded-lg px-8 py-6 text-sm md:text-base" onClick={() => navigate("/select-exercise")}>
-                  분석 시작하기
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-                {session ? (
-                  <Button size="lg" variant="outline" className="modern-outline-btn rounded-lg px-7 py-6" onClick={() => navigate("/mypage")}>
-                    지난 기록 보기
-                  </Button>
-                ) : null}
               </div>
 
-            
+              <h1 className="text-[clamp(3rem,8vw,6rem)] font-extrabold leading-[1.0] tracking-tight">
+                POSE <span className="text-[#c8f135]">COACH</span>
+              </h1>
+
+              <p className="mt-6 text-white/50 max-w-lg">
+                운동 영상을 업로드하면 프레임 단위 자세 점수와 AI 피드백을 제공합니다.
+              </p>
+
+              <div className="mt-10 flex gap-4 flex-wrap">
+                <Button
+                  size="lg"
+                  className="bg-[#c8f135] text-black hover:bg-[#b4da30] px-10"
+                  onClick={() => navigate("/select-exercise")}
+                >
+                  분석 시작하기
+                  <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+
+                {session && (
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="border-[#c8f135]/40 text-[#c8f135] hover:bg-[#c8f135]/10"
+                    onClick={() => navigate("/mypage")}
+                  >
+                    지난 기록 보기
+                  </Button>
+                )}
+              </div>
             </div>
 
-            <div className="relative min-h-[360px] md:min-h-[460px] animate-rise delay-2">
-              <div className="absolute inset-0 rounded-3xl border border-slate-700/60 bg-[#141821]" />
+            {/* RIGHT IMAGE */}
+            <div className="relative min-h-[360px] md:min-h-[460px]">
+              <div className="absolute inset-0 rounded-3xl border border-white/10 bg-[#141821]" />
               <img
                 src="https://images.unsplash.com/photo-1601422407692-ec4eeec1d9b3?q=80&w=1170&auto=format&fit=crop"
                 alt="운동 랜딩 비주얼"
                 className="absolute inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] rounded-2xl object-cover"
               />
-              <div className="absolute inset-3 rounded-2xl bg-gradient-to-t from-black/75 via-black/30 to-black/5" />
-
-              <div className="absolute right-5 top-7 rounded-xl border border-orange-300/30 bg-orange-400 px-4 py-3 text-white shadow-lg">
-                <p className="text-[11px] font-semibold">진행률</p>
-                <p className="text-3xl font-extrabold leading-none">4.9</p>
-              </div>
-
-              <div className="absolute left-6 top-[54%] rounded-xl border border-slate-600 bg-slate-900/90 px-4 py-3 text-slate-100 shadow-lg">
-                <p className="flex items-center gap-2 text-lg font-bold">
-                  <PlayCircle className="h-4 w-4 text-orange-400" />
-                  350+
-                </p>
-                <p className="text-[11px] text-slate-300">Video Tutorial</p>
-              </div>
-
-              <div className="absolute right-5 bottom-7 rounded-xl border border-violet-400/30 bg-violet-600 px-4 py-3 text-white shadow-lg">
-                <p className="text-2xl font-extrabold leading-none">500+</p>
-                <p className="text-[11px]">Workout Clips</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-12 border-t border-slate-700/70 pt-8">
-            <h2 className="text-3xl font-bold text-white">무엇부터 시작할까요?</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              운동 루틴을 선택하고, 분석 리포트로 자세를 빠르게 개선하세요.
-            </p>
-
-            <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">
-              <article className="rounded-xl border border-slate-700 bg-[#2a2f40] p-4">
-                <h3 className="text-sm font-bold text-white">운동 분석</h3>
-                <p className="mt-2 text-xs text-slate-300">프레임 단위 점수와 자세 오류를 확인합니다.</p>
-                <ArrowRight className="mt-4 h-4 w-4 text-slate-300" />
-              </article>
-              <article className="rounded-xl border border-slate-700 bg-[#2a2f40] p-4">
-                <h3 className="text-sm font-bold text-white">운동 프로그램</h3>
-                <p className="mt-2 text-xs text-slate-300">반복 횟수와 운동 시간을 기준으로 루틴을 관리합니다.</p>
-                <ArrowRight className="mt-4 h-4 w-4 text-slate-300" />
-              </article>
-              <article className="rounded-xl border border-slate-700 bg-[#2a2f40] p-4">
-                <h3 className="text-sm font-bold text-white">피드백 리포트</h3>
-                <p className="mt-2 text-xs text-slate-300">AI 코멘트와 단계별 점수를 함께 제공합니다.</p>
-                <ArrowRight className="mt-4 h-4 w-4 text-slate-300" />
-              </article>
-              <article className="rounded-xl border border-slate-700 bg-[#3b4155] p-4">
-                <h3 className="flex items-center gap-1 text-sm font-bold text-white">
-                  <Trophy className="h-4 w-4 text-orange-300" />
-                  PRO 분석
-                </h3>
-                <p className="mt-2 text-xs text-slate-200">DTW 유사도와 과거 기록 비교로 고급 분석을 진행합니다.</p>
-                <ArrowRight className="mt-4 h-4 w-4 text-slate-100" />
-              </article>
+              <div className="absolute inset-3 rounded-2xl bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
             </div>
           </div>
         </section>
+
+        {/* ── SCROLL FEATURE SECTIONS ── */}
+        <section className="px-10 pb-24 border-t border-white/10">
+          <div className="pt-16 pb-8">
+            <h2 className="text-3xl font-bold">POINTS</h2>
+            <p className="mt-3 text-white/45 text-sm">
+              스크롤하면서 핵심 기능을 한 번에 이해할 수 있어요.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-16">
+            {[
+              {
+                eyebrow: "AI 동작 인식",
+                title: "AI 동작 인식을 통한 \n 실시간 운동 피드백",
+                desc:
+                  "AI 동작 인식을 통해 운동마다 실시간으로 자세 피드백을 알려줍니다.\n" +
+                  "쉽고 정확하게 운동에만 집중하세요.",
+                img: "https://images.unsplash.com/photo-1597452329152-52f9eee96576?w=1200&auto=format&fit=crop&q=70",
+              },
+              {
+                eyebrow: "동작 흐름 분석",
+                title: "DTW 기반 유사도 분석",
+                desc:
+                  "단순한 동작 수행을 넘어, 정교한 DTW 알고리즘이\n" +
+                  "모범 자세와의 흐름 차이를 미세하게 분석합니다.\n" +
+                  "나의 움직임 궤적이 프로와 얼마나 일치하는지 확인하세요.",
+                img: "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?q=80&w=1200&auto=format&fit=crop",
+              },
+              {
+                eyebrow: "AI 리포트",
+                title: "나만의 AI 퍼스널 리포트",
+                desc:
+                  "프레임 단위의 정밀한 점수 산정은 물론,\n" +
+                  "AI 트레이너가 분석한 취약 구간 교정법과\n" +
+                  "성장을 위한 연습 우선순위를 한눈에 정리해 드립니다.",
+                img: "https://images.unsplash.com/photo-1601422407692-ec4eeec1d9b3?q=80&w=1200&auto=format&fit=crop",
+              },
+            ].map((f, idx) => (
+              <ScrollFeatureRow key={f.eyebrow} feature={f} flip={idx % 2 === 1} />
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// ── 보조 컴포넌트는 메인 컴포넌트 외부로 분리 ──
+function ScrollFeatureRow({
+  feature,
+  flip,
+}: {
+  feature: { eyebrow: string; title: string; desc: string; img: string };
+  flip?: boolean;
+}) {
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-[#0f1116]/70 overflow-hidden">
+      <div
+        className={`grid md:grid-cols-2 gap-0 items-stretch ${
+          flip ? "md:[&>div:first-child]:order-2" : ""
+        }`}
+      >
+        {/* TEXT */}
+        <div className="p-10 md:p-14 flex flex-col justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1 text-xs border border-[#c8f135]/30 bg-[#c8f135]/10 rounded-full text-[#c8f135] w-fit">
+            {feature.eyebrow}
+          </div>
+
+          <h3 className="mt-6 text-[clamp(2.2rem,4vw,3.4rem)] font-extrabold leading-[1.08] whitespace-pre-line">
+            {feature.title}
+          </h3>
+
+          <p className="mt-5 text-white/45 text-[15px] leading-7 whitespace-pre-line max-w-xl">
+            {feature.desc}
+          </p>
+
+          <div className="mt-8 flex gap-3">
+            <div className="h-1.5 w-20 rounded-full bg-[#c8f135]/60" />
+            <div className="h-1.5 w-10 rounded-full bg-white/10" />
+            <div className="h-1.5 w-6 rounded-full bg-white/10" />
+          </div>
+        </div>
+
+        {/* MEDIA */}
+        <div className="relative min-h-[320px] md:min-h-[520px] bg-black">
+          <img
+            src={feature.img}
+            alt={feature.eyebrow}
+            className="absolute inset-0 w-full h-full object-cover opacity-90"
+          />
+          <div className="absolute inset-0 bg-gradient-to-l from-black/70 via-black/20 to-transparent" />
+          <div className="absolute inset-6 rounded-3xl border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.55)]" />
+        </div>
       </div>
     </div>
   );

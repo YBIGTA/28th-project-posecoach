@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from apps.api.report_router import report_router
 
 from apps.api.analysis import (
     SUPPORTED_VIDEO_EXTENSIONS,
@@ -25,6 +26,8 @@ app = FastAPI(
     version="0.1.0",
     description="Backend API for auth, workout history, and pose analysis.",
 )
+
+app.include_router(report_router) 
 
 app.add_middleware(
     CORSMiddleware,

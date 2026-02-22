@@ -1,8 +1,6 @@
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
 
-// Prototype only: hardcoded key for AI report generation.
-// Replace with your key before testing. Do not keep this in production.
 const PROTOTYPE_GEMINI_API_KEY = "AIzaSyCNVNNZkO0s7lJx6AQYZ8WMJUuxX-FzBAw";
 const ENV_GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ?? "";
 
@@ -18,14 +16,7 @@ export type AnalysisResults = {
     phase: string;
     score: number;
     errors: string[];
-    details?: Record<
-      string,
-      {
-        status: string;
-        value: string;
-        feedback: string;
-      }
-    >;
+    details?: Record<string, { status: string; value: string; feedback: string }>;
   }>;
   error_frames: Array<{
     frame_idx: number;
@@ -33,27 +24,12 @@ export type AnalysisResults = {
     phase: string;
     score: number;
     errors: string[];
-    details?: Record<
-      string,
-      {
-        status: string;
-        value: string;
-        feedback: string;
-      }
-    >;
+    details?: Record<string, { status: string; value: string; feedback: string }>;
   }>;
   keypoints?: Array<{
     frame_idx: number;
     img_url?: string | null;
-    pts?: Record<
-      string,
-      {
-        x: number;
-        y: number;
-        z?: number;
-        vis: number;
-      }
-    > | null;
+    pts?: Record<string, { x: number; y: number; z?: number; vis: number }> | null;
     selected_for_analysis?: boolean;
   }>;
   duration: number;
@@ -115,19 +91,13 @@ export type WorkoutRecord = {
   dtw_score?: number | null;
   combined_score?: number | null;
   error_frame_count: number;
-  errors?: Array<{
-    error_msg: string;
-    count: number;
-  }>;
-  phase_scores?: Array<{
-    phase: string;
-    avg_score: number;
-    frame_count: number;
-  }>;
+  errors?: Array<{ error_msg: string; count: number }>;
+  phase_scores?: Array<{ phase: string; avg_score: number; frame_count: number }>;
 };
 
 export type AnalyzeVideoInput = {
   videoFile: File;
+  referenceFile?: File;           // ← 추가
   exerciseType: "pushup" | "pullup";
   gripType?: string;
   extractFps?: number;
@@ -147,6 +117,11 @@ export async function analyzeVideo(input: AnalyzeVideoInput): Promise<AnalyzeVid
   formData.append("video", input.videoFile);
   formData.append("exercise_type", input.exerciseType);
   formData.append("extract_fps", String(input.extractFps ?? 10));
+
+  // 레퍼런스 영상 (DTW용) - 백엔드 필드명 확인 필요 시 "reference_video"로 변경
+  if (input.referenceFile) {
+    formData.append("reference_video", input.referenceFile);
+  }
 
   const grip = normalizeGrip(input.gripType);
   if (grip) formData.append("grip_type", grip);
@@ -191,7 +166,6 @@ export async function fetchUserWorkouts(userId: number): Promise<WorkoutRecord[]
     const detail = payload?.detail ?? "운동 기록 조회에 실패했습니다.";
     throw new Error(typeof detail === "string" ? detail : "운동 기록 조회에 실패했습니다.");
   }
-
   const workouts = Array.isArray(payload?.workouts) ? payload.workouts : [];
   return workouts as WorkoutRecord[];
 }
@@ -200,8 +174,7 @@ export async function generateGeminiFeedback(input: GeminiFeedbackInput): Promis
   const normalizeKey = (value?: string): string | undefined => {
     if (!value) return undefined;
     const key = value.trim();
-    if (!key) return undefined;
-    if (key === "PASTE_YOUR_GEMINI_API_KEY_HERE") return undefined;
+    if (!key || key === "PASTE_YOUR_GEMINI_API_KEY_HERE") return undefined;
     return key;
   };
 
@@ -216,7 +189,18 @@ export async function generateGeminiFeedback(input: GeminiFeedbackInput): Promis
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        analysis_results: input.analysisResults,
+        analysis_results: {
+          video_name: input.analysisResults.video_name,
+          exercise_type: input.analysisResults.exercise_type,
+          exercise_count: input.analysisResults.exercise_count,
+          frame_scores: input.analysisResults.frame_scores,
+          error_frames: input.analysisResults.error_frames,
+          duration: input.analysisResults.duration,
+          fps: input.analysisResults.fps,
+          total_frames: input.analysisResults.total_frames,
+          dtw_active: input.analysisResults.dtw_active,
+          dtw_result: input.analysisResults.dtw_result,
+        },
         api_key: apiKey,
         temperature: input.temperature ?? 0.7,
         max_output_tokens: input.maxOutputTokens ?? 6000,

@@ -1,224 +1,84 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
-import {
-  AlertTriangle,
-  BarChart3,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Home,
-  Sparkles,
-  XCircle,
-} from "lucide-react";
-
-import { API_BASE_URL, generateGeminiFeedback, type AnalysisResults } from "../lib/api";
-import { Badge } from "../components/ui/badge";
+import { Dumbbell } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Progress } from "../components/ui/progress";
+import { getSession } from "../lib/auth";
+import { generateGeminiFeedback } from "../lib/api";
 
-interface FeedbackItem {
-  id: string;
-  type: "good" | "warning" | "error";
-  title: string;
-  description: string;
-}
-
-type ResultPageState = {
-  exercise?: "pushup" | "pullup";
-  grip?: string;
-  analysisResults?: AnalysisResults;
-  savedWorkoutId?: number | null;
+type FrameScore = {
+  frame_idx: number; img_url?: string; phase: string;
+  score: number; errors: string[];
+  details?: Record<string, { status: string; value: string; feedback: string }>;
+};
+type ErrorFrame = FrameScore;
+type DtwResult = {
+  overall_dtw_score?: number;
+  phase_dtw_scores?: Record<string, number>;
+  phase_segment_counts?: Record<string, number>;
+  worst_joints?: Record<string, number>;
+};
+type AnalysisResults = {
+  video_name: string; exercise_type: string; exercise_count: number;
+  frame_scores: FrameScore[]; error_frames: ErrorFrame[];
+  duration: number; fps: number; total_frames: number;
+  dtw_result?: DtwResult; dtw_active: boolean;
 };
 
-type PosePoint = {
-  x: number;
-  y: number;
-  z?: number;
-  vis: number;
+const API = (import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:8000";
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+const STEPS = ["운동 선택", "그립 선택", "결과 확인"];
+
+const PHASE_COLOR: Record<string, string> = {
+  top: "rgba(91,143,255,0.7)", bottom: "rgba(255,107,53,0.7)",
+  ascending: "rgba(200,241,53,0.7)", descending: "rgba(200,241,53,0.55)",
+  ready: "#444", finish: "#444",
 };
 
-type PosePoints = Record<string, PosePoint> | null | undefined;
-
-const COCO_SKELETON: Array<[string, string]> = [
-  ["Nose", "Left Eye"], ["Nose", "Right Eye"],
-  ["Left Eye", "Left Ear"], ["Right Eye", "Right Ear"],
-  ["Left Shoulder", "Right Shoulder"],
-  ["Left Shoulder", "Left Elbow"], ["Left Elbow", "Left Wrist"],
-  ["Right Shoulder", "Right Elbow"], ["Right Elbow", "Right Wrist"],
-  ["Left Shoulder", "Left Hip"], ["Right Shoulder", "Right Hip"],
-  ["Left Hip", "Right Hip"],
-  ["Left Hip", "Left Knee"], ["Left Knee", "Left Ankle"],
-  ["Right Hip", "Right Knee"], ["Right Knee", "Right Ankle"],
-];
-
-const VIS_THRESHOLD = 0.5;
-const PHASE_LABEL: Record<string, string> = {
-  ready: "준비",
-  top: "상단",
-  descending: "하강",
-  bottom: "하단",
-  ascending: "상승",
-};
-
-function getIcon(type: FeedbackItem["type"]) {
-  if (type === "good") return <CheckCircle2 className="w-5 h-5 text-green-600" />;
-  if (type === "warning") return <AlertTriangle className="w-5 h-5 text-yellow-600" />;
-  return <XCircle className="w-5 h-5 text-red-600" />;
-}
-
-function getBadgeVariant(type: FeedbackItem["type"]) {
-  if (type === "good") return "default";
-  if (type === "warning") return "secondary";
-  return "destructive";
-}
-
-function buildFeedbackItems(results: AnalysisResults): FeedbackItem[] {
-  const counts = new Map<string, number>();
-  for (const ef of results.error_frames ?? []) {
-    for (const msg of ef.errors ?? []) {
-      counts.set(msg, (counts.get(msg) ?? 0) + 1);
-    }
-  }
-
-  const rankedErrors = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const items: FeedbackItem[] = rankedErrors.map(([msg, count], idx) => ({
-    id: `err-${idx}`,
-    type: count >= 5 ? "error" : "warning",
-    title: `자세 오류 (${count}프레임)`,
-    description: msg,
-  }));
-
-  if (items.length === 0) {
-    items.push({
-      id: "good-0",
-      type: "good",
-      title: "양호한 동작",
-      description: "활성 구간에서 큰 자세 오류가 감지되지 않았습니다.",
-    });
-  }
-
-  items.unshift({
-    id: "summary-0",
-    type: "good",
-    title: "반복 횟수",
-    description: `감지된 반복 횟수: ${results.exercise_count}회`,
-  });
-
-  return items;
-}
-
-function scoreColor(score: number): string {
-  if (score >= 80) return "rgb(22, 163, 74)";
-  if (score >= 60) return "rgb(234, 179, 8)";
-  return "rgb(220, 38, 38)";
-}
-
-function toImageUrl(imgUrl?: string | null): string | null {
-  if (!imgUrl) return null;
-  if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) return imgUrl;
-  return `${API_BASE_URL}${imgUrl}`;
-}
-
-function toFilteringMethodLabel(method?: string): string {
-  if (!method) return "알 수 없음";
-  if (method === "rule") return "규칙 기반";
-  if (method === "ml_fallback") return "규칙 기반 + ML 보완";
-  if (method === "none") return "필터링 없음";
-  return method;
-}
-
-function toFilteringReasonLabel(reason?: string): string | undefined {
-  if (!reason) return undefined;
-  if (reason === "no input frames") return "입력 프레임이 없습니다.";
-  if (reason === "joblib not installed") return "joblib가 설치되어 있지 않습니다.";
-  if (reason.startsWith("model file missing:")) return `모델 파일이 없습니다: ${reason.replace("model file missing:", "").trim()}`;
-  if (reason.startsWith("failed to load model:")) return `모델 로드에 실패했습니다: ${reason.replace("failed to load model:", "").trim()}`;
-  if (reason.startsWith("failed to run model:")) return `모델 추론에 실패했습니다: ${reason.replace("failed to run model:", "").trim()}`;
-  if (reason === "selected frame ratio too small") return "선택 프레임 비율이 너무 작습니다.";
-  if (reason.startsWith("ML low-contrast over-selection")) return "ML 결과 대비가 낮아 과도 선택으로 판단되었습니다.";
-  return reason;
-}
-
-function toPhaseLabel(phase?: string): string {
-  if (!phase) return "-";
-  return PHASE_LABEL[phase] ?? phase;
-}
-
-function SkeletonPreview({
-  imageUrl,
-  keypoints,
-  showOverlay,
-}: {
-  imageUrl: string | null;
-  keypoints: PosePoints;
-  showOverlay: boolean;
-}) {
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    const img = imageRef.current;
-    const canvas = canvasRef.current;
-    if (!img || !canvas) return;
-
-    const draw = () => {
-      const width = img.naturalWidth || img.width || 1;
-      const height = img.naturalHeight || img.height || 1;
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.clearRect(0, 0, width, height);
-
-      if (!showOverlay || !keypoints) return;
-
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgb(255,255,0)";
-      for (const [a, b] of COCO_SKELETON) {
-        const pa = keypoints[a];
-        const pb = keypoints[b];
-        if (!pa || !pb) continue;
-        if (pa.vis < VIS_THRESHOLD || pb.vis < VIS_THRESHOLD) continue;
-        ctx.beginPath();
-        ctx.moveTo(pa.x, pa.y);
-        ctx.lineTo(pb.x, pb.y);
-        ctx.stroke();
-      }
-
-      ctx.fillStyle = "rgb(0,255,0)";
-      for (const point of Object.values(keypoints)) {
-        if (point.vis < VIS_THRESHOLD) continue;
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    };
-
-    if (img.complete) draw();
-    else img.onload = draw;
-
-    return () => {
-      if (img) img.onload = null;
-    };
-  }, [imageUrl, keypoints, showOverlay]);
-
-  if (!imageUrl) {
-    return (
-      <div className="rounded-lg border bg-slate-100 text-sm text-slate-600 p-10 text-center">
-        프레임 이미지를 불러올 수 없습니다.
-      </div>
-    );
-  }
-
+function StepBar({ current }: { current: number }) {
   return (
-    <div className="relative rounded-lg overflow-hidden border bg-black">
-      <img ref={imageRef} src={imageUrl} alt="스켈레톤 미리보기" className="w-full h-auto block" />
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+    <div className="flex items-center py-6">
+      {STEPS.map((s, i) => (
+        <div key={s} className={`flex items-center ${i < STEPS.length - 1 ? "flex-1" : ""}`}>
+          <div className="flex items-center gap-2">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-semibold
+              ${i < current ? "bg-[#c8f135]/10 border border-[#c8f135]/40 text-[#c8f135]"
+              : i === current ? "bg-[#c8f135] text-black"
+              : "bg-white/5 border border-white/10 text-white/30"}`}>
+              {i < current ? "✓" : i + 1}
+            </div>
+            <span className={`text-[12px] tracking-wide ${i === current ? "text-[#c8f135]" : "text-white/40"}`}>{s}</span>
+          </div>
+          {i < STEPS.length - 1 && (
+            <div className={`flex-1 h-px mx-4 ${i < current ? "bg-[#c8f135]/40" : "bg-white/10"}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Chip({ children, color = "#c8f135" }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span style={{ fontFamily: "DM Mono, monospace", fontSize: 9, borderRadius: 4, padding: "3px 8px",
+      background: `${color}15`, border: `1px solid ${color}45`, color, display: "inline-block" }}>
+      {children}
+    </span>
+  );
+}
+
+function MiniBarChart({ items }: { items: { label: string; pct: number; val: string; color?: string }[] }) {
+  return (
+    <div className="flex flex-col gap-4 py-2">
+      {items.map(it => (
+        <div key={it.label} className="flex items-center gap-3">
+          <span className="text-right shrink-0 text-white/40" style={{ fontFamily: "DM Mono, monospace", fontSize: 12, width: 72 }}>{it.label}</span>
+          <div className="flex-1 h-6 bg-white/5 rounded overflow-hidden">
+            <div style={{ height: "100%", width: `${it.pct}%`, background: it.color ?? "rgba(200,241,53,0.6)", transition: "width .4s", borderRadius: 3 }} />
+          </div>
+          <span className="shrink-0 text-white/40" style={{ fontFamily: "DM Mono, monospace", fontSize: 12, width: 36 }}>{it.val}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -226,413 +86,412 @@ function SkeletonPreview({
 export function Result() {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = (location.state ?? {}) as ResultPageState;
+  const session = useMemo(() => getSession(), []);
+  const { analysisResults: res, exercise, grip } =
+    (location.state ?? {}) as { analysisResults?: AnalysisResults; exercise?: string; grip?: string };
 
-  const exercise = state.exercise ?? "pushup";
-  const grip = state.grip;
-  const analysis = state.analysisResults;
-  const savedWorkoutId = state.savedWorkoutId ?? null;
+  // ── 모든 useState는 조건문보다 위에 ──
+  const [activeTab, setActiveTab] = useState<"phase" | "review" | "ai">("phase");
+  const [selErrIdx, setSelErrIdx] = useState(0);
+  const [frameIdx, setFrameIdx]   = useState(0);
+  const [selPhase, setSelPhase]   = useState<string>("전체");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [feedback, setFeedback]   = useState<string | null>(null);
+  const [fbLoading, setFbLoading] = useState(false);
+  const [fbError, setFbError]     = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
-  const [showOverlay, setShowOverlay] = useState(true);
-  const [frameIndex, setFrameIndex] = useState<number>(0);
-  const [geminiLoading, setGeminiLoading] = useState(false);
-  const [geminiError, setGeminiError] = useState<string | null>(null);
-  const [geminiFeedback, setGeminiFeedback] = useState<string | null>(null);
-  const autoGeminiRequestedRef = useRef<string>("");
-
-  if (!analysis) {
+  if (!res) {
     return (
-      <div className="modern-shell min-h-screen w-full p-8 flex items-center justify-center">
-        <Card className="max-w-xl w-full glass-card">
-          <CardContent className="p-8 text-center space-y-4">
-            <h1 className="text-2xl font-bold">분석 결과가 없습니다</h1>
-            <p className="text-soft">영상을 업로드한 뒤 분석을 실행해 주세요.</p>
-            <Button className="modern-primary-btn" onClick={() => navigate("/select-exercise")}>분석 시작으로 이동</Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex items-center justify-center px-6 py-10">
+        <div className="w-full max-w-[1400px] rounded-[30px] border border-white/10 bg-[#0f1116]/80 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] p-20 text-center">
+          <div className="text-2xl font-extrabold mb-6">분석 결과가 없습니다</div>
+          <Button className="bg-[#c8f135] text-black hover:bg-[#b4da30]" onClick={() => navigate("/select-exercise")}>← 분석 시작하기</Button>
+        </div>
       </div>
     );
   }
 
-  const avgScoreRaw =
-    analysis.frame_scores && analysis.frame_scores.length > 0
-      ? analysis.frame_scores.reduce((acc, item) => acc + item.score, 0) / analysis.frame_scores.length
-      : 0;
-  const overallScore = Math.round(avgScoreRaw * 100);
+  const { frame_scores, error_frames, dtw_result, dtw_active } = res;
+  const avgScore = frame_scores.length ? frame_scores.reduce((a, b) => a + b.score, 0) / frame_scores.length : 0;
+  const dtw      = dtw_active && dtw_result?.overall_dtw_score != null ? dtw_result.overall_dtw_score : null;
+  const combined = dtw != null ? avgScore * 0.7 + dtw * 0.3 : avgScore;
+  let grade = "C", gradeColor = "#ff6b35";
+  if (avgScore >= 0.9) { grade = "S"; gradeColor = "#c8f135"; }
+  else if (avgScore >= 0.7) { grade = "A"; gradeColor = "#5b8fff"; }
+  else if (avgScore >= 0.5) { grade = "B"; gradeColor = "rgba(255,255,255,0.6)"; }
 
-  const feedbackItems = buildFeedbackItems(analysis);
-  const goodCount = feedbackItems.filter((item) => item.type === "good").length;
-  const warningCount = feedbackItems.filter((item) => item.type === "warning").length;
-  const errorCount = feedbackItems.filter((item) => item.type === "error").length;
+  const byPhase: Record<string, number[]> = {};
+  frame_scores.forEach(f => { byPhase[f.phase] = [...(byPhase[f.phase] ?? []), f.score]; });
+  const phaseAvg = Object.entries(byPhase).map(([p, sc]) => ({ phase: p, avg: sc.reduce((a, b) => a + b, 0) / sc.length }));
+  const phaseCnt = Object.entries(byPhase).map(([p, sc]) => ({ phase: p, cnt: sc.length }));
+  const maxCnt   = Math.max(...phaseCnt.map(p => p.cnt), 1);
 
-  const dtwOverall = analysis.dtw_result?.overall_dtw_score;
-  const dtwPhase = analysis.dtw_result?.phase_dtw_scores ?? {};
+  const filteredFrames = selPhase === "전체" ? frame_scores : frame_scores.filter(f => f.phase === selPhase);
+  const selFrame = filteredFrames[Math.min(frameIdx, filteredFrames.length - 1)];
+  const selErr   = error_frames[selErrIdx];
 
-  const keypointFrames = useMemo(
-    () => [...(analysis.keypoints ?? [])].sort((a, b) => a.frame_idx - b.frame_idx),
-    [analysis.keypoints],
-  );
+  const errCount: Record<string, number> = {};
+  error_frames.forEach(ef => ef.errors.forEach(e => { errCount[e] = (errCount[e] ?? 0) + 1; }));
+  const topErrors = Object.entries(errCount).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const maxErrCnt = topErrors[0]?.[1] ?? 1;
 
-  const scoreByFrame = useMemo(
-    () => new Map((analysis.frame_scores ?? []).map((row) => [row.frame_idx, row])),
-    [analysis.frame_scores],
-  );
-
-  const keypointByFrame = useMemo(
-    () => new Map(keypointFrames.map((row) => [row.frame_idx, row])),
-    [keypointFrames],
-  );
-
-  const selectedFrameSet = useMemo(() => {
-    if (analysis.selected_frame_indices && analysis.selected_frame_indices.length > 0) {
-      return new Set(analysis.selected_frame_indices);
-    }
-    const selectedFromPayload = keypointFrames
-      .filter((row) => row.selected_for_analysis)
-      .map((row) => row.frame_idx);
-    if (selectedFromPayload.length > 0) return new Set(selectedFromPayload);
-    return new Set((analysis.frame_scores ?? []).map((row) => row.frame_idx));
-  }, [analysis.selected_frame_indices, analysis.frame_scores, keypointFrames]);
-
-  const maxFrameIdx = Math.max(0, analysis.total_frames - 1);
-
-  useEffect(() => {
-    const initial = analysis.selected_frame_indices?.[0] ?? 0;
-    setFrameIndex(Math.min(Math.max(0, initial), maxFrameIdx));
-  }, [analysis.video_name, analysis.selected_frame_indices, maxFrameIdx]);
-
-  const currentKeypoint = keypointByFrame.get(frameIndex);
-  const currentScore = scoreByFrame.get(frameIndex);
-  const currentImageUrl = toImageUrl(currentKeypoint?.img_url ?? currentScore?.img_url);
-  const currentSelected = selectedFrameSet.has(frameIndex);
-
-  const handleGenerateGeminiFeedback = useCallback(async () => {
-    if (geminiLoading) return;
-    setGeminiLoading(true);
-    setGeminiError(null);
+  const genFeedback = async () => {
+    if (fbLoading) return;
+    setFbLoading(true); setFbError(null);
     try {
-      const feedback = await generateGeminiFeedback({
+      const text = await generateGeminiFeedback({
         analysisResults: {
-          video_name: analysis.video_name,
-          exercise_type: analysis.exercise_type,
-          exercise_type_en: analysis.exercise_type_en,
-          grip_type: analysis.grip_type,
-          exercise_count: analysis.exercise_count,
-          frame_scores: analysis.frame_scores,
-          error_frames: analysis.error_frames,
-          duration: analysis.duration,
-          fps: analysis.fps,
-          total_frames: analysis.total_frames,
-          analyzed_frame_count: analysis.analyzed_frame_count,
-          filtered_out_count: analysis.filtered_out_count,
-          filtering: analysis.filtering,
-          selected_frame_indices: analysis.selected_frame_indices,
-          success_count: analysis.success_count,
-          dtw_active: analysis.dtw_active,
-          dtw_result: analysis.dtw_result,
+          video_name: res.video_name,
+          exercise_type: res.exercise_type,
+          exercise_count: res.exercise_count,
+          frame_scores: res.frame_scores,
+          error_frames: res.error_frames,
+          duration: res.duration,
+          fps: res.fps,
+          total_frames: res.total_frames,
+          dtw_active: res.dtw_active,
+          dtw_result: res.dtw_result,
         },
+        apiKey: geminiKey || undefined,
       });
-      setGeminiFeedback(feedback);
+      setFeedback(text);
+    } catch (e) { setFbError(e instanceof Error ? e.message : "오류"); }
+    finally { setFbLoading(false); }
+  };
+
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify({ ...res, ai_feedback: feedback }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `${res.video_name}_analysis.json`; a.click();
+  };
+
+  const downloadReport = async () => {
+    if (reportLoading) return;
+    setReportLoading(true);
+    try {
+      const r = await fetch(`${API}/analysis/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysis_results: res, ai_feedback: feedback }),
+      });
+      if (!r.ok) throw new Error("리포트 생성 실패");
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `posecoach_report_${res.video_name}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
-      setGeminiError(e instanceof Error ? e.message : "AI 피드백 생성에 실패했습니다.");
+      alert("PDF 리포트 생성에 실패했습니다.");
     } finally {
-      setGeminiLoading(false);
+      setReportLoading(false);
     }
-  }, [analysis, geminiLoading]);
+  };
 
-  const autoGeminiKey = useMemo(
-    () => `${analysis.video_name}|${analysis.exercise_count}|${analysis.total_frames}|${analysis.filtered_out_count ?? -1}`,
-    [analysis.video_name, analysis.exercise_count, analysis.total_frames, analysis.filtered_out_count],
-  );
-
-  useEffect(() => {
-    if (autoGeminiRequestedRef.current === autoGeminiKey) return;
-    autoGeminiRequestedRef.current = autoGeminiKey;
-    void handleGenerateGeminiFeedback();
-  }, [autoGeminiKey, handleGenerateGeminiFeedback]);
+  const tabCls = (on: boolean) =>
+    `px-5 py-3 text-[16px] tracking-wide border-b-2 transition-all cursor-pointer bg-transparent border-0 outline-none
+    ${on ? "text-[#c8f135] border-[#c8f135]" : "text-white/30 border-transparent hover:text-white/60"}`;
 
   return (
-    <div className="modern-shell min-h-screen w-full p-6 md:p-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="text-center mb-12 animate-rise">
-          <span className="hero-chip mb-4">
-            <Sparkles className="w-3.5 h-3.5 mr-1" />
-            분석 리포트
-          </span>
-          
-          <h1 className="text-4xl md:text-5xl font-bold mb-2">분석 완료</h1>
-          <p className="text-soft">
-            {exercise === "pullup" ? "풀업" : "푸시업"} 결과
-            {grip && <span> ({grip})</span>}
-          </p>
-          {savedWorkoutId ? (
-            <p className="text-sm text-emerald-700 dark:text-emerald-300 mt-2">운동 기록으로 저장됨 (#{savedWorkoutId})</p>
-          ) : (
-            <p className="text-sm text-soft mt-2">로그인하지 않아 기록에 저장되지 않았습니다.</p>
-          )}
-        </div>
+    <div className="min-h-screen w-full bg-[#0a0a0a] text-white px-6 py-10">
+      <div className="w-full max-w-[1400px] mx-auto rounded-[30px] border border-white/10 bg-[#0f1116]/80 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden">
 
-        <Card className="mb-8 glass-card animate-rise delay-1">
-          <CardContent className="p-8">
-            <div className="text-center mb-6">
-              <div className="text-6xl font-bold mb-2" style={{ color: scoreColor(overallScore) }}>
-                {overallScore}
-                <span className="text-3xl">%</span>
+        {/* ── HEADER ── */}
+        <header className="flex items-center justify-between px-8 py-6 border-b border-white/10 backdrop-blur-xl bg-black/40">
+          <button onClick={() => navigate("/")} className="flex items-center gap-2 font-extrabold tracking-widest text-white">
+            <Dumbbell className="w-5 h-5 text-[#c8f135]" />
+            POSECOACH
+          </button>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm"
+              className="h-8 px-3 border-white/10 text-white/60 hover:text-[#c8f135] hover:border-[#c8f135]/40 hover:bg-[#c8f135]/10"
+              onClick={() => navigate("/")}>
+              ← 뒤로
+            </Button>
+            {session && (
+              <div className="h-8 px-3 rounded-full border border-[#c8f135]/30 bg-[#c8f135]/10 text-[#c8f135] flex items-center justify-center text-xs tracking-wider">
+                {session.username}
               </div>
-              <p className="text-soft">종합 점수</p>
-            </div>
-            <Progress value={overallScore} className="h-3" />
+            )}
+          </div>
+        </header>
 
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-8">
-              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
-                <div className="text-2xl font-bold text-cyan-300">{analysis.exercise_count}</div>
-                <p className="text-sm text-slate-100">반복 횟수</p>
-              </div>
-              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
-                <div className="text-2xl font-bold text-slate-100">{analysis.total_frames}</div>
-                <p className="text-sm text-slate-100">추출 프레임</p>
-              </div>
-              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
-                <div className="text-2xl font-bold text-indigo-300">{analysis.analyzed_frame_count ?? 0}</div>
-                <p className="text-sm text-slate-100">분석 프레임</p>
-              </div>
-              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
-                <div className="flex items-center justify-center mb-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 mr-1" />
-                  <span className="text-2xl font-bold text-emerald-400">{goodCount}</span>
-                </div>
-                <p className="text-sm text-slate-100">양호</p>
-              </div>
-              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
-                <div className="flex items-center justify-center mb-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-400 mr-1" />
-                  <span className="text-2xl font-bold text-amber-400">{warningCount}</span>
-                </div>
-                <p className="text-sm text-slate-100">주의</p>
-              </div>
-              <div className="text-center p-4 rounded-xl border border-slate-700 bg-slate-900/72">
-                <div className="flex items-center justify-center mb-2">
-                  <XCircle className="w-5 h-5 text-red-400 mr-1" />
-                  <span className="text-2xl font-bold text-red-400">{errorCount}</span>
-                </div>
-                <p className="text-sm text-slate-100">오류</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* ── CONTENT ── */}
+        <div className="px-10 py-10">
 
-        {analysis.dtw_active ? (
-          <Card className="mb-8 glass-card animate-rise delay-1">
-            <CardHeader>
-              <CardTitle>DTW 유사도</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700">
-                  <div className="text-sm text-soft mb-1">종합 DTW 점수</div>
-                  <div className="text-3xl font-bold">
-                    {typeof dtwOverall === "number" ? `${Math.round(dtwOverall * 100)}%` : "없음"}
+          <StepBar current={2} />
+
+          {/* ── 메트릭 5카드 ── */}
+          <div className="grid grid-cols-5 gap-4 mb-10">
+            {[
+              { label: "운동 횟수", val: `${res.exercise_count}회`, color: "#c8f135" },
+              { label: "평균 자세 점수", val: pct(avgScore), color: "#c8f135" },
+              { label: "DTW 유사도", val: dtw != null ? pct(dtw) : "비활성", color: "#5b8fff" },
+              { label: "오류 프레임", val: `${error_frames.length}개`, color: "#ff6b35" },
+              { label: "종합 점수", val: pct(combined), color: gradeColor, sub: `${grade} GRADE` },
+            ].map(m => (
+              <div key={m.label} className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-3">
+                <div className="text-white/50 text-sm" style={{ fontFamily: "DM Mono, monospace" }}>{m.label}</div>
+                <div className="font-extrabold text-3xl leading-none" style={{ color: m.color }}>{m.val}</div>
+                {m.sub && <div className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>{m.sub}</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* ── 탭 ── */}
+          <div className="flex border-b border-white/10 mb-8">
+            <button className={tabCls(activeTab === "phase")}  style={{ fontFamily: "DM Mono, monospace" }} onClick={() => setActiveTab("phase")}>Phase 분석</button>
+            <button className={tabCls(activeTab === "review")} style={{ fontFamily: "DM Mono, monospace" }} onClick={() => setActiveTab("review")}>취약구간 리뷰</button>
+            <button className={tabCls(activeTab === "ai")}     style={{ fontFamily: "DM Mono, monospace" }} onClick={() => setActiveTab("ai")}>AI 피드백</button>
+          </div>
+
+          {/* ══ TAB A — Phase 분석 ══ */}
+          {activeTab === "phase" && (
+            <div className="flex flex-col gap-7">
+              <div className="grid grid-cols-2 gap-5">
+                <div className="rounded-xl border border-white/8 bg-black/30 overflow-hidden flex flex-col">
+                  <div className="px-5 py-4 border-b border-white/8 flex items-center gap-2 text-sm text-white/50" style={{ fontFamily: "DM Mono, monospace" }}>
+                    <div className="w-3 h-3 rounded-full bg-[#5b8fff]" /> Phase 분포
+                  </div>
+                  <div className="p-6 flex-1 flex flex-col justify-center">
+                    <MiniBarChart items={phaseCnt.map(p => ({ label: p.phase, pct: (p.cnt / maxCnt) * 100, val: `${p.cnt}f`, color: "rgba(91,143,255,0.6)" }))} />
                   </div>
                 </div>
-                <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700">
-                  <div className="text-sm text-soft mb-2">Phase별 점수</div>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(dtwPhase).length === 0 ? (
-                      <span className="text-sm text-soft">단계 점수 없음</span>
-                    ) : (
-                      Object.entries(dtwPhase).map(([phase, val]) => (
-                        <Badge key={phase} variant="secondary">
-                          {toPhaseLabel(phase)}: {Math.round(val * 100)}%
-                        </Badge>
-                      ))
+                <div className="rounded-xl border border-white/8 bg-black/30 overflow-hidden flex flex-col">
+                  <div className="px-5 py-4 border-b border-white/8 flex items-center gap-2 text-sm text-white/50" style={{ fontFamily: "DM Mono, monospace" }}>
+                    <div className="w-3 h-3 rounded-full bg-[#ff6b35]" /> Phase별 평균 점수
+                  </div>
+                  <div className="p-6 flex-1 flex flex-col justify-center">
+                    <MiniBarChart items={phaseAvg.map(p => ({ label: p.phase, pct: p.avg * 100, val: pct(p.avg), color: p.avg < 0.6 ? "rgba(255,107,53,0.7)" : "rgba(200,241,53,0.6)" }))} />
+                  </div>
+                </div>
+              </div>
+
+              {/* DTW 패널 */}
+              {dtw != null && dtw_result?.phase_dtw_scores && (
+                <div className="rounded-xl border border-[#5b8fff]/20 bg-[#5b8fff]/5 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-[#5b8fff]/15 text-l text-[#5b8fff]" style={{ fontFamily: "DM Mono, monospace" }}>
+                    ≋ DTW 모범 동작 대비 분석
+                  </div>
+                  <div className="p-6 flex flex-col gap-6">
+                    <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Object.keys(dtw_result.phase_dtw_scores).length}, 1fr)` }}>
+                      {Object.entries(dtw_result.phase_dtw_scores).map(([p, sc]) => (
+                        <div key={p} className="rounded-xl border border-white/8 bg-white/5 p-6 flex flex-col gap-3">
+                          <div className="text-sm text-white/40" style={{ fontFamily: "DM Mono, monospace" }}>{p}</div>
+                          <div className="text-4xl font-extrabold" style={{ color: sc >= 0.7 ? "#5b8fff" : "#ff6b35" }}>{pct(sc)}</div>
+                          <div className="text-xs text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>{dtw_result.phase_segment_counts?.[p] ?? 0} segs</div>
+                        </div>
+                      ))}
+                    </div>
+                    {dtw_result.worst_joints && (
+                      <div className="flex flex-col gap-3">
+                        <div className="text-sm text-white/40" style={{ fontFamily: "DM Mono, monospace" }}>주요 차이 관절 (모범 대비)</div>
+                        {Object.entries(dtw_result.worst_joints).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([j, v]) => {
+                          const maxV = Math.max(...Object.values(dtw_result.worst_joints!));
+                          return (
+                            <div key={j} className="flex items-center gap-4 rounded-xl bg-white/5 px-5 py-4">
+                              <span className="flex-1 text-sm text-white/50" style={{ fontFamily: "DM Mono, monospace" }}>{j}</span>
+                              <div className="w-40 h-2.5 bg-white/10 rounded-full overflow-hidden">
+                                <div style={{ height: "100%", width: `${(v / maxV) * 100}%`, background: v / maxV > 0.6 ? "#ff6b35" : "#5b8fff", borderRadius: 9999 }} />
+                              </div>
+                              <span className="text-sm text-white/40 w-12 text-right" style={{ fontFamily: "DM Mono, monospace" }}>{v.toFixed(3)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <Card className="mb-8 glass-card animate-rise delay-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-2xl md:text-3xl font-extrabold tracking-tight">
-              <span aria-hidden>📋</span>
-              상세 피드백
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {feedbackItems.map((item) => (
-                <div key={item.id} className="flex items-start gap-4 p-4 rounded-xl border border-slate-700 bg-slate-900/55">
-                  <div className="flex-shrink-0 mt-0.5">{getIcon(item.type)}</div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold">{item.title}</h3>
-                      <Badge variant={getBadgeVariant(item.type)}>
-                        {item.type === "good" ? "양호" : item.type === "warning" ? "주의" : "오류"}
-                      </Badge>
-                    </div>
-                    <p className="text-soft text-sm">{item.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="mb-8 glass-card animate-rise delay-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-2xl md:text-3xl font-extrabold tracking-tight">
-              <span aria-hidden>🤖</span>
-              트레이너의 종합 리포트
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  onClick={handleGenerateGeminiFeedback}
-                  disabled={geminiLoading}
-                  className="modern-primary-btn"
-                >
-                  {geminiLoading ? "자동 생성 중..." : "AI 종합 피드백 다시 생성"}
-                </Button>
-                {geminiFeedback ? (
-                  <Button type="button" variant="outline" className="modern-outline-btn" onClick={() => setGeminiFeedback(null)}>
-                    지우기
-                  </Button>
-                ) : null}
-              </div>
-
-              {geminiError ? (
-                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {geminiError}
-                </div>
-              ) : null}
-
-              {geminiFeedback ? (
-                <div className="rounded-lg border border-slate-700 bg-slate-900/65 px-5 py-5 text-slate-100">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      h2: (props) => <h2 className="mt-6 mb-3 text-xl md:text-2xl font-bold text-slate-50" {...props} />,
-                      h3: (props) => <h3 className="mt-5 mb-2 text-lg md:text-xl font-semibold text-slate-100" {...props} />,
-                      p: (props) => <p className="mb-3 text-sm md:text-base leading-7 text-slate-200" {...props} />,
-                      ul: (props) => <ul className="mb-4 list-disc pl-5 space-y-1 text-sm md:text-base text-slate-200" {...props} />,
-                      ol: (props) => <ol className="mb-4 list-decimal pl-5 space-y-1 text-sm md:text-base text-slate-200" {...props} />,
-                      li: (props) => <li className="leading-7" {...props} />,
-                      strong: (props) => <strong className="font-extrabold text-slate-50" {...props} />,
-                      hr: (props) => <hr className="my-5 border-slate-700" {...props} />,
-                    }}
-                  >
-                    {geminiFeedback}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <p className="text-sm text-soft">아직 생성된 AI 종합 피드백이 없습니다.</p>
               )}
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        <Card className="mb-8 glass-card animate-rise delay-3">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-2xl md:text-3xl font-extrabold tracking-tight">
-              <span aria-hidden>🎬</span>
-              프레임 탐색기
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2 mb-4">
-              <Badge variant="secondary">프레임 {frameIndex}</Badge>
-              {currentScore ? <Badge>{toPhaseLabel(currentScore.phase)}</Badge> : null}
-              {currentScore ? <Badge variant="secondary">점수: {Math.round(currentScore.score * 100)}%</Badge> : null}
-              {!currentScore && currentSelected ? (
-                <Badge variant="secondary">준비/종료 구간 (점수 없음)</Badge>
-              ) : null}
-              {!currentSelected ? (
-                <Badge className="bg-red-600 text-white hover:bg-red-600">필터링 제외 프레임 (휴식 구간)</Badge>
-              ) : null}
-            </div>
+          {/* ══ TAB B — 취약구간 리뷰 ══ */}
+          {activeTab === "review" && (
+            <div className="flex flex-col gap-7">
+              <div className="grid gap-4" style={{ gridTemplateColumns: "200px 1fr" }}>
+                <div className="flex flex-col gap-2">
+                  {topErrors.length === 0 && (
+                    <div className="text-white/30 text-xs p-4" style={{ fontFamily: "DM Mono, monospace" }}>감지된 오류 없음 ✅</div>
+                  )}
+                  {topErrors.map(([err, cnt], i) => (
+                    <button key={err} onClick={() => setSelErrIdx(i)}
+                      className={`rounded-xl p-4 flex items-center gap-3 text-left transition-all w-full cursor-pointer border
+                        ${selErrIdx === i ? "bg-[#ff6b35]/8 border-[#ff6b35]/30" : "bg-white/3 border-white/8 hover:border-white/20"}`}>
+                      <div className="w-8 h-8 rounded-lg bg-white/5 shrink-0 flex items-center justify-center text-xs">⚠️</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[9px] text-white/70 mb-1 truncate" style={{ fontFamily: "DM Mono, monospace" }}>{err}</div>
+                        <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                          <div style={{ height: "100%", width: `${(cnt / maxErrCnt) * 100}%`, background: "#ff6b35", borderRadius: 9999 }} />
+                        </div>
+                      </div>
+                      <span className="text-[9px] text-white/30 shrink-0" style={{ fontFamily: "DM Mono, monospace" }}>{cnt}회</span>
+                    </button>
+                  ))}
+                </div>
 
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="modern-outline-btn"
-                disabled={frameIndex <= 0}
-                onClick={() => setFrameIndex((prev) => Math.max(0, prev - 1))}
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                이전
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="modern-outline-btn"
-                disabled={frameIndex >= maxFrameIdx}
-                onClick={() => setFrameIndex((prev) => Math.min(maxFrameIdx, prev + 1))}
-              >
-                다음
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="modern-outline-btn" onClick={() => setShowOverlay((prev) => !prev)}>
-                {showOverlay ? "오버레이 숨기기" : "오버레이 보기"}
-              </Button>
-            </div>
-
-            <input
-              type="range"
-              min={0}
-              max={maxFrameIdx}
-              value={frameIndex}
-              onChange={(e) => setFrameIndex(Number(e.target.value))}
-              className="w-full mb-6 accent-cyan-600"
-            />
-
-            <div>
-              <p className="text-sm text-soft mb-2">스켈레톤 오버레이</p>
-              <SkeletonPreview imageUrl={currentImageUrl} keypoints={currentKeypoint?.pts} showOverlay={showOverlay} />
-            </div>
-
-            {currentScore ? (
-              <div className="mt-6 space-y-2">
-                <h3 className="font-semibold">프레임 피드백</h3>
-                {currentScore.errors && currentScore.errors.length > 0 ? (
-                  currentScore.errors.map((err, idx) => (
-                    <p key={`${currentScore.frame_idx}-${idx}`} className="text-sm text-red-700 dark:text-red-300">
-                      - {err}
-                    </p>
-                  ))
-                ) : (
-                  <p className="text-sm text-emerald-700 dark:text-emerald-300">이 프레임에서 자세 오류가 감지되지 않았습니다.</p>
+                {selErr && (
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-2 flex-wrap">
+                      <Chip color="#c8f135">{selErr.phase}</Chip>
+                      {selErr.errors.map((e, i) => <Chip key={i} color="#ff6b35">❌ {e}</Chip>)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/8 overflow-hidden bg-white/3">
+                        <div className="px-3 py-2 border-b border-white/8 flex justify-between text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>
+                          <span>Original</span><span>frame #{selErr.frame_idx}</span>
+                        </div>
+                        {selErr.img_url
+                          ? <img src={`${API}${selErr.img_url}`} alt="original" className="w-full block" />
+                          : <div className="aspect-[4/3] flex items-center justify-center text-white/20 text-xs">이미지 없음</div>}
+                      </div>
+                      <div className="rounded-xl border border-[#c8f135]/15 overflow-hidden bg-white/3">
+                        <div className="px-3 py-2 border-b border-[#c8f135]/10 flex justify-between text-[9px]" style={{ fontFamily: "DM Mono, monospace" }}>
+                          <span className="text-[#c8f135]/60">Skeleton</span><span className="text-[#ff6b35]">오류 강조</span>
+                        </div>
+                        {selErr.img_url
+                          ? <img src={`${API}${selErr.img_url}`} alt="skeleton" className="w-full block" style={{ filter: "hue-rotate(90deg) saturate(2) brightness(0.8)" }} />
+                          : <div className="aspect-[4/3] flex items-center justify-center text-white/20 text-xs">이미지 없음</div>}
+                      </div>
+                    </div>
+                    {selErr.details && (
+                      <div className="flex flex-col gap-1">
+                        {Object.entries(selErr.details).map(([k, v]) => (
+                          <div key={k} className="flex items-center gap-3 rounded-lg bg-white/3 px-3 py-2">
+                            <span className="text-xs w-3">{v.status === "ok" ? "✅" : v.status === "warning" ? "⚠️" : "❌"}</span>
+                            <span className="flex-1 text-[9px] text-white/40" style={{ fontFamily: "DM Mono, monospace" }}>{k}</span>
+                            <span className="text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>{v.value}</span>
+                            <div className="w-14 h-1 bg-white/10 rounded-full overflow-hidden">
+                              <div style={{ height: "100%", borderRadius: 9999, width: v.status === "ok" ? "80%" : v.status === "warning" ? "50%" : "25%", background: v.status === "ok" ? "#c8f135" : v.status === "warning" ? "#f5a623" : "#ff6b35" }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            ) : (
-              <p className="mt-6 text-sm text-soft">
-                {currentSelected
-                  ? "활성 분석 구간에 포함되지만 점수 산정 Phase 바깥 프레임입니다."
-                  : "활동성 필터링으로 제외된 프레임입니다. (휴식/저움직임 구간)"}
-              </p>
-            )}
-          </CardContent>
-        </Card>
 
-        <div className="flex justify-center gap-4">
-          <Button size="lg" variant="outline" className="modern-outline-btn px-8" onClick={() => navigate("/")}>
-            <Home className="w-4 h-4 mr-2" />
-            홈
-          </Button>
-          <Button
-            size="lg"
-            className="modern-primary-btn px-8"
-            onClick={() => navigate("/select-exercise")}
-          >
-            다시 분석하기
-          </Button>
+              {/* 전체구간 리뷰 */}
+              <div className="border-t border-white/8 pt-8 flex flex-col gap-5">
+                <div className="text-[10px] text-[#c8f135] tracking-widest" style={{ fontFamily: "DM Mono, monospace" }}>🔍 전체구간 리뷰</div>
+                <div className="rounded-xl border border-white/8 bg-white/3 p-5 flex flex-col gap-4">
+                  <div className="flex justify-between text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>
+                    <span>프레임 탐색바</span>
+                    <span className="text-[#c8f135]">frame #{selFrame?.frame_idx ?? 0} / {filteredFrames.length}</span>
+                  </div>
+                  <div className="relative">
+                    <div className="h-6 bg-white/5 rounded-lg overflow-hidden relative">
+                      {filteredFrames.map((f, i) => (
+                        <div key={i} style={{ position: "absolute", top: 0, left: `${(i / filteredFrames.length) * 100}%`, width: `${(1 / filteredFrames.length) * 100}%`, height: "100%", background: (PHASE_COLOR[f.phase] ?? "#444").replace("0.7","0.5").replace("0.55","0.4") }} />
+                      ))}
+                    </div>
+                    <input type="range" min={0} max={Math.max(filteredFrames.length - 1, 0)} value={frameIdx}
+                      onChange={e => setFrameIdx(+e.target.value)}
+                      className="absolute inset-0 opacity-0 w-full cursor-pointer" />
+                  </div>
+                  <div className="flex gap-4 flex-wrap">
+                    {Object.entries(PHASE_COLOR).filter(([p]) => byPhase[p]).map(([p, c]) => (
+                      <div key={p} className="flex items-center gap-1 text-[8px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{p}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>구간 선택</span>
+                  {["전체", ...Object.keys(byPhase)].map(p => (
+                    <button key={p} onClick={() => { setSelPhase(p); setFrameIdx(0); }}
+                      className={`text-[9px] rounded-full px-3 py-1 border transition-all cursor-pointer
+                        ${selPhase === p ? "bg-[#c8f135]/10 border-[#c8f135]/40 text-[#c8f135]" : "bg-transparent border-white/10 text-white/30 hover:border-white/30"}`}
+                      style={{ fontFamily: "DM Mono, monospace" }}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+
+                {selFrame && (
+                  <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/3 px-4 py-3">
+                    <Chip color="#c8f135">{selFrame.phase}</Chip>
+                    <Chip color={selFrame.score < 0.7 ? "#ff6b35" : "#5b8fff"}>자세 점수: {pct(selFrame.score)}</Chip>
+                    <span className="flex-1" />
+                    <span className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>← 슬라이더로 이동</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-4">
+                  {[
+                    { label: "사용자 원본", sub: `frame #${selFrame?.frame_idx}`, borderCls: "border-white/8", headerCls: "text-white/30", imgFilter: undefined, imgUrl: selFrame?.img_url, placeholder: "원본 이미지" },
+                    { label: "스켈레톤 오버레이", sub: "오류 강조", borderCls: "border-[#c8f135]/15", headerCls: "text-[#c8f135]/50", imgFilter: "hue-rotate(90deg) saturate(2) brightness(0.75)", imgUrl: selFrame?.img_url, placeholder: "스켈레톤" },
+                    { label: "레퍼런스", sub: "모범 동작", borderCls: "border-[#5b8fff]/20", headerCls: "text-[#5b8fff]/60", imgFilter: undefined, imgUrl: null, placeholder: dtw != null ? "레퍼런스" : "레퍼런스 없음" },
+                  ].map(col => (
+                    <div key={col.label} className={`rounded-xl border ${col.borderCls} overflow-hidden`}>
+                      <div className={`px-3 py-2 border-b ${col.borderCls} flex justify-between text-[9px] ${col.headerCls} bg-black/20`} style={{ fontFamily: "DM Mono, monospace" }}>
+                        <span>{col.label}</span><span className="text-white/20">{col.sub}</span>
+                      </div>
+                      <div className="aspect-[3/4] bg-white/3 flex items-center justify-center">
+                        {col.imgUrl
+                          ? <img src={`${API}${col.imgUrl}`} alt={col.label} className="w-full h-full object-cover" style={col.imgFilter ? { filter: col.imgFilter } : undefined} />
+                          : <span className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>{col.placeholder}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {selFrame && selFrame.errors.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {selFrame.errors.map((e, i) => (
+                      <div key={i} className="rounded-lg bg-[#ff6b35]/8 border border-[#ff6b35]/20 px-4 py-2 text-[10px] text-[#ff6b35]" style={{ fontFamily: "DM Mono, monospace" }}>⚠ {e}</div>
+                    ))}
+                  </div>
+                )}
+                {selFrame && selFrame.errors.length === 0 && (
+                  <div className="rounded-lg bg-[#c8f135]/5 border border-[#c8f135]/15 px-4 py-2 text-[10px] text-[#c8f135]/70" style={{ fontFamily: "DM Mono, monospace" }}>✅ 감지된 자세 오류 없음</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ══ TAB C — AI 피드백 ══ */}
+          {activeTab === "ai" && (
+            <div className="flex flex-col gap-7">
+              <div className="rounded-xl border border-white/8 bg-white/3 p-6">
+                <div className="text-[9px] text-white/30 mb-3" style={{ fontFamily: "DM Mono, monospace" }}>// GEMINI API KEY</div>
+                <div className="flex gap-3">
+                  <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza..."
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-[#c8f135]/40 transition-colors" />
+                  <Button disabled={fbLoading} onClick={genFeedback} className="bg-[#c8f135] text-black hover:bg-[#b4da30] px-6 text-sm whitespace-nowrap">
+                    {fbLoading ? "생성 중..." : "AI 피드백 생성"}
+                  </Button>
+                </div>
+                {fbError && <div className="mt-3 text-[10px] text-[#ff6b35]" style={{ fontFamily: "DM Mono, monospace" }}>⚠ {fbError}</div>}
+              </div>
+              {feedback ? (
+                <div className="rounded-xl border border-[#c8f135]/15 bg-gradient-to-br from-[#c8f135]/4 to-[#5b8fff]/4 p-8">
+                  <div className="text-[9px] text-[#c8f135]/60 mb-4 tracking-widest" style={{ fontFamily: "DM Mono, monospace" }}>🤖 AI 트레이너 종합 피드백</div>
+                  <div className="text-sm text-white/60 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: "Inter, sans-serif", fontWeight: 300 }}>{feedback}</div>
+                </div>
+              ) : (
+                <div className="text-center py-16 text-[10px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>
+                  Gemini API Key를 입력하고 AI 피드백을 생성하세요
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── 하단 액션 ── */}
+          <div className="flex gap-3 mt-10 pt-8 border-t border-white/8">
+            <Button className="flex-1 bg-[#c8f135] text-black hover:bg-[#b4da30] text-xs" disabled={reportLoading} onClick={downloadReport}>
+              {reportLoading ? "리포트 생성 중..." : "⬇️ 피드백 리포트 받기"}
+            </Button>
+            <Button variant="outline" size="sm" className="border-white/10 text-white/40 hover:text-white text-xs" onClick={exportJson}>↓ JSON</Button>
+            <Button variant="outline" size="sm" className="border-white/10 text-white/40 hover:text-white text-xs" onClick={() => navigate("/select-exercise")}>🔄 새 분석</Button>
+            <Button variant="outline" size="sm" className="border-white/10 text-white/40 hover:text-white text-xs" onClick={() => navigate("/")}>🏠 홈</Button>
+          </div>
+
         </div>
       </div>
     </div>
