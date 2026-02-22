@@ -20,6 +20,8 @@ ds_modules/reference_*.json
 
 data/frames/*
 
+data/posecoach.db
+
 # Web frontend artifacts
 apps/web/node_modules/
 apps/web/dist/
