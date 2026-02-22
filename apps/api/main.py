@@ -17,7 +17,7 @@ from apps.api.analysis import (
 from db.auth import login_user, register_user
 from db.database import get_user_stats, get_user_workouts, init_db, save_workout
 from gemini_feedback import generate_feedback
-from apps.api.report_router import report_router   # ← import
+from apps.api.report_router import report_router
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -27,7 +27,7 @@ app = FastAPI(
     description="Backend API for auth, workout history, and pose analysis.",
 )
 
-app.include_router(report_router)         # ← app 정의 후에 등록
+app.include_router(report_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -138,7 +138,7 @@ def create_gemini_feedback(payload: GeminiFeedbackRequest) -> dict:
 @app.post("/analysis")
 async def analyze_video(
     video: UploadFile = File(...),
-    reference_video: Optional[UploadFile] = File(None),   # ← DTW용 레퍼런스 영상
+    reference_video: Optional[UploadFile] = File(None),  # DTW용 레퍼런스 영상
     exercise_type: str = Form(...),
     extract_fps: int = Form(10),
     grip_type: Optional[str] = Form(None),
@@ -159,7 +159,6 @@ async def analyze_video(
     save_path = build_upload_path(filename)
     save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 레퍼런스 영상 저장 경로
     ref_save_path: Optional[Path] = None
 
     try:
@@ -170,11 +169,9 @@ async def analyze_video(
         # 레퍼런스 영상 저장 (있을 때만)
         if reference_video and reference_video.filename:
             ref_ext = Path(reference_video.filename).suffix.lower()
-            if ref_ext not in SUPPORTED_VIDEO_EXTENSIONS:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"레퍼런스 영상 형식 불지원: {ref_ext}",
-                )
+            if ref_ext and ref_ext not in SUPPORTED_VIDEO_EXTENSIONS:
+                raise HTTPException(status_code=400, detail=f"레퍼런스 영상 형식 불지원: {ref_ext}")
+
             ref_save_path = build_upload_path(reference_video.filename)
             ref_save_path.parent.mkdir(parents=True, exist_ok=True)
             with ref_save_path.open("wb") as f:
@@ -185,7 +182,7 @@ async def analyze_video(
             exercise_type=exercise_type,
             extract_fps=extract_fps,
             grip_type=grip_type,
-            reference_video_path=ref_save_path,   # ← 전달
+            reference_video_path=ref_save_path,
         )
 
         workout_id = None
@@ -195,6 +192,7 @@ async def analyze_video(
             workout_id = save_workout(user_id, results)
 
         return {"analysis_results": results, "saved_workout_id": workout_id}
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
@@ -202,6 +200,12 @@ async def analyze_video(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 중 오류가 발생했습니다: {e}") from e
     finally:
-        video.file.close()
+        try:
+            video.file.close()
+        except Exception:
+            pass
         if reference_video:
-            reference_video.file.close()
+            try:
+                reference_video.file.close()
+            except Exception:
+                pass

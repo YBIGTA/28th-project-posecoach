@@ -38,3 +38,4 @@ __all__ = [
     'DTWScorer',
     'extract_feature_vector',
 ]
+

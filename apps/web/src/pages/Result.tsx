@@ -112,7 +112,10 @@ export function Result() {
     );
   }
 
-  const { frame_scores, error_frames, dtw_result, dtw_active } = res;
+  const frame_scores = res.frame_scores ?? [];
+  const error_frames = res.error_frames ?? [];
+  const dtw_result   = res.dtw_result ?? undefined;
+  const dtw_active   = res.dtw_active ?? false;
   const avgScore = frame_scores.length ? frame_scores.reduce((a, b) => a + b.score, 0) / frame_scores.length : 0;
   const dtw      = dtw_active && dtw_result?.overall_dtw_score != null ? dtw_result.overall_dtw_score : null;
   const combined = dtw != null ? avgScore * 0.7 + dtw * 0.3 : avgScore;
@@ -128,8 +131,11 @@ export function Result() {
   const maxCnt   = Math.max(...phaseCnt.map(p => p.cnt), 1);
 
   const filteredFrames = selPhase === "전체" ? frame_scores : frame_scores.filter(f => f.phase === selPhase);
-  const selFrame = filteredFrames[Math.min(frameIdx, filteredFrames.length - 1)];
-  const selErr   = error_frames[selErrIdx];
+  const selFrame =
+  filteredFrames.length > 0
+    ? filteredFrames[Math.min(frameIdx, filteredFrames.length - 1)]
+    : undefined;
+  const selErr = error_frames.length > 0 ? error_frames[selErrIdx] : undefined;
 
   const errCount: Record<string, number> = {};
   error_frames.forEach(ef => ef.errors.forEach(e => { errCount[e] = (errCount[e] ?? 0) + 1; }));
@@ -425,7 +431,7 @@ export function Result() {
                 <div className="grid grid-cols-3 gap-4">
                   {[
                     { label: "사용자 원본", sub: `frame #${selFrame?.frame_idx}`, borderCls: "border-white/8", headerCls: "text-white/30", imgFilter: undefined, imgUrl: selFrame?.img_url, placeholder: "원본 이미지" },
-                    { label: "스켈레톤 오버레이", sub: "오류 강조", borderCls: "border-[#c8f135]/15", headerCls: "text-[#c8f135]/50", imgFilter: "hue-rotate(90deg) saturate(2) brightness(0.75)", imgUrl: selFrame?.skeleton_url, placeholder: "스켈레톤" },
+                    { label: "스켈레톤 오버레이", sub: "오류 강조", borderCls: "border-[#c8f135]/15", headerCls: "text-[#c8f135]/50", imgUrl: selFrame?.skeleton_url, placeholder: "스켈레톤" },
                     { label: "레퍼런스", sub: "모범 동작", borderCls: "border-[#5b8fff]/20", headerCls: "text-[#5b8fff]/60", imgFilter: undefined, imgUrl: null, placeholder: dtw != null ? "레퍼런스" : "레퍼런스 없음" },
                   ].map(col => (
                     <div key={col.label} className={`rounded-xl border ${col.borderCls} overflow-hidden`}>
@@ -441,14 +447,14 @@ export function Result() {
                   ))}
                 </div>
 
-                {selFrame && selFrame.errors.length > 0 && (
+                {selFrame && (selFrame.errors ?? []).length > 0 && (
                   <div className="flex flex-col gap-2">
                     {selFrame.errors.map((e, i) => (
                       <div key={i} className="rounded-lg bg-[#ff6b35]/8 border border-[#ff6b35]/20 px-4 py-2 text-[10px] text-[#ff6b35]" style={{ fontFamily: "DM Mono, monospace" }}>⚠ {e}</div>
                     ))}
                   </div>
                 )}
-                {selFrame && selFrame.errors.length === 0 && (
+                {selFrame && (selFrame.errors ?? []).length > 0 && (
                   <div className="rounded-lg bg-[#c8f135]/5 border border-[#c8f135]/15 px-4 py-2 text-[10px] text-[#c8f135]/70" style={{ fontFamily: "DM Mono, monospace" }}>✅ 감지된 자세 오류 없음</div>
                 )}
               </div>

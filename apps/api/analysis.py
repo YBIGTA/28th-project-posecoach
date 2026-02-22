@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import sys
 import time
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -16,14 +17,14 @@ sys.path.insert(0, str(ROOT / "preprocess" / "scripts"))
 
 from video_preprocess import extract_frames  # type: ignore
 from extract_yolo_frames import process_single_frame  # type: ignore
-from utils.keypoints import load_pose_model
-from utils.activity_segment import (
+from utils.keypoints import load_pose_model  # type: ignore
+from utils.activity_segment import (  # type: ignore
     apply_pullup_rule_first_filter,
     apply_pushup_rule_first_filter,
     detect_active_frame_indices,
     resolve_activity_model_path,
 )
-from ds_modules import (
+from ds_modules import (  # type: ignore
     DTWScorer,
     KeypointSmoother,
     PullUpCounter,
@@ -36,11 +37,12 @@ from ds_modules import (
     extract_phase_metric,
     normalize_pts,
 )
-
-from pathlib import Path
-from utils.visualization import draw_skeleton_on_frame
+from utils.visualization import draw_skeleton_on_frame  # type: ignore
 
 
+# --------------------
+# constants
+# --------------------
 PUSHUP_KO = "푸시업"
 PULLUP_KO = "풀업"
 
@@ -56,36 +58,37 @@ OUT_FRAMES_DIR = ROOT / "data" / "frames"
 
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
 
-def save_skeleton_overlay(img_path: Path, keypoints: Optional[dict], out_path: Path) -> bool:
-    rgb = draw_skeleton_on_frame(img_path, keypoints)
-    if rgb is None:
-        return False
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    return cv2.imwrite(str(out_path), bgr)
 
+# --------------------
+# helpers (urls, save)
+# --------------------
 def _local_path_to_static_url(p: str) -> Optional[str]:
-    """
-    OUT_FRAMES_DIR 하위에 저장된 어떤 이미지든 /static/frames/... URL로 바꿔준다.
-    (원본 프레임이든, overlays든 다 동일 규칙)
-    """
     try:
         rel = Path(p).resolve().relative_to(OUT_FRAMES_DIR.resolve())
         return f"/static/frames/{rel.as_posix()}"
     except Exception:
         return None
 
+
 def _frame_path_to_url(frame_path: str) -> Optional[str]:
-    try:
-        rel = Path(frame_path).resolve().relative_to(OUT_FRAMES_DIR.resolve())
-        return f"/static/frames/{rel.as_posix()}"
-    except Exception:
+    return _local_path_to_static_url(frame_path)
+
+
+def save_skeleton_overlay(img_path: str, keypoints: Optional[dict], out_path: Path) -> Optional[str]:
+    rgb = draw_skeleton_on_frame(img_path, keypoints)
+    if rgb is None:
         return None
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ok = cv2.imwrite(str(out_path), bgr)
+    return _local_path_to_static_url(str(out_path)) if ok else None
 
 
+# --------------------
+# canonicalize
+# --------------------
 def canonicalize_exercise_type(value: str) -> tuple[str, str]:
     normalized = (value or "").strip().lower().replace("-", "").replace("_", "").replace(" ", "")
-
     push_aliases = {"pushup", "pushups", PUSHUP_KO}
     pull_aliases = {"pullup", "pullups", PULLUP_KO}
 
@@ -112,11 +115,17 @@ def canonicalize_grip_type(value: Optional[str]) -> str:
     return mapping.get(normalized, GRIP_OVERHAND)
 
 
+# --------------------
+# model cache
+# --------------------
 @lru_cache(maxsize=1)
 def get_pose_model():
     return load_pose_model()
 
 
+# --------------------
+# upload path
+# --------------------
 def build_upload_path(original_filename: str) -> Path:
     UPLOAD_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     suffix = Path(original_filename).suffix.lower()
@@ -127,65 +136,65 @@ def build_upload_path(original_filename: str) -> Path:
     return UPLOAD_VIDEO_DIR / f"{safe_stem}_{uniq}{suffix}"
 
 
-def _extract_reference_sequences(
+
+def _generate_reference_json_realtime(
     reference_video_path: Path,
     exercise_ko: str,
     extract_fps: int,
-) -> dict[str, list[np.ndarray]]:
+    out_json_path: Path,
+) -> bool:
     """
-    레퍼런스 영상에서 phase별 feature vector 시퀀스를 추출한다.
-    DTWScorer.reference 형식과 동일하게 반환:
-        { phase_name: [np.ndarray, ...] }
+    ✅ 옵션 B: scripts/generate_reference.py를 실시간으로 실행해서
+    reference JSON을 생성한다.
     """
-    img_w, img_h = TARGET_RESOLUTION
+    script_path = ROOT / "scripts" / "generate_reference.py"
+    if not script_path.exists():
+        # 스크립트 경로가 다르면 여기서 바로 실패함
+        print(f"⚠ generate_reference.py 없음: {script_path}")
+        return False
 
-    ref_frames_dir = OUT_FRAMES_DIR / (reference_video_path.stem + "_ref")
-    if ref_frames_dir.exists():
-        shutil.rmtree(ref_frames_dir)
-    ref_frames_dir.mkdir(parents=True, exist_ok=True)
+    out_json_path.parent.mkdir(parents=True, exist_ok=True)
 
-    extract_frames(reference_video_path, ref_frames_dir, extract_fps, TARGET_RESOLUTION)
-
-    ref_frame_files = sorted(
-        f for f in ref_frames_dir.iterdir()
-        if f.suffix.lower() in {".jpg", ".jpeg", ".png"}
-    )
-
-    if not ref_frame_files:
-        return {}
-
-    pose_model = get_pose_model()
-    ref_smoother = KeypointSmoother(window=3)
-    ref_phase_detector = create_phase_detector(exercise_ko, fps=extract_fps)
-
-    ref_sequences: dict[str, list[np.ndarray]] = {}
-
-    for fpath in ref_frame_files:
-        pts = process_single_frame(pose_model, fpath)
-        flat = compute_virtual_keypoints(pts)
-        smoothed = ref_smoother.smooth(flat)
-        npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
-
-        phase_metric = extract_phase_metric(npts, exercise_ko)
-        phase = (
-            ref_phase_detector.update(phase_metric)
-            if phase_metric is not None
-            else ref_phase_detector.phase
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--video",
+                str(reference_video_path),
+                "--exercise",
+                exercise_ko,          # ✅ scripts는 한글 choices=["푸시업","풀업"]
+                "--output",
+                str(out_json_path),
+                "--fps",
+                str(int(extract_fps)),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
         )
+        return out_json_path.exists() and out_json_path.stat().st_size > 10
+    except subprocess.CalledProcessError as e:
+        print("⚠ reference JSON 실시간 생성 실패")
+        if e.stdout:
+            print(e.stdout[-2000:])
+        if e.stderr:
+            print(e.stderr[-2000:])
+        return False
+    except Exception as e:
+        print(f"⚠ reference JSON 실시간 생성 예외: {e}")
+        return False
 
-        feat_vec = extract_feature_vector(npts, exercise_ko)
-        if feat_vec is not None:
-            ref_sequences.setdefault(phase, []).append(feat_vec)
 
-    return ref_sequences
-
-
+# --------------------
+# main analysis
+# --------------------
 def run_video_analysis(
     video_path: Path,
     exercise_type: str,
     extract_fps: int,
     grip_type: Optional[str] = None,
-    reference_video_path: Optional[Path] = None,  # ← 레퍼런스 영상 (DTW용)
+    reference_video_path: Optional[Path] = None,  # DTW용 레퍼런스 영상
 ) -> dict:
     exercise_en, exercise_ko = canonicalize_exercise_type(exercise_type)
     grip_ko = canonicalize_grip_type(grip_type) if exercise_en == "pullup" else None
@@ -195,14 +204,15 @@ def run_video_analysis(
 
     OUT_FRAMES_DIR.mkdir(parents=True, exist_ok=True)
 
+    # --- 원본 비디오 메타 ---
     cap = cv2.VideoCapture(str(video_path))
     src_fps = cap.get(cv2.CAP_PROP_FPS)
     total_src_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_src_frames / src_fps if src_fps > 0 else 0
+    duration = total_src_frames / src_fps if src_fps and src_fps > 0 else 0.0
     cap.release()
 
+    # --- 프레임 추출 경로 ---
     frames_dir = OUT_FRAMES_DIR / video_path.stem
-    
     if frames_dir.exists():
         shutil.rmtree(frames_dir)
     frames_dir.mkdir(parents=True, exist_ok=True)
@@ -210,15 +220,18 @@ def run_video_analysis(
     overlays_dir = frames_dir / "overlays"
     overlays_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- 프레임 추출 ---
     extract_frames(video_path, frames_dir, extract_fps, TARGET_RESOLUTION)
-
     frame_files = sorted(
-        f for f in frames_dir.iterdir() if f.suffix.lower() in {".jpg", ".jpeg", ".png"}
+        f for f in frames_dir.iterdir()
+        if f.suffix.lower() in {".jpg", ".jpeg", ".png"}
     )
 
+    # --- 키포인트 추출 ---
     pose_model = get_pose_model()
-    all_keypoints = []
+    all_keypoints: list[dict] = []
     success_count = 0
+
     for i, fpath in enumerate(frame_files):
         pts = process_single_frame(pose_model, fpath)
         if pts is not None:
@@ -233,11 +246,11 @@ def run_video_analysis(
             }
         )
 
-    img_h, img_w = TARGET_RESOLUTION[1], TARGET_RESOLUTION[0]
+    img_w, img_h = TARGET_RESOLUTION[0], TARGET_RESOLUTION[1]
     smoother = KeypointSmoother(window=3)
     phase_detector = create_phase_detector(exercise_ko, fps=extract_fps)
 
-    # 1) Motion/ML filtering first.
+    # --- 1) Motion/ML filtering ---
     model_path = resolve_activity_model_path(exercise_en)
     selected_indices, filter_meta = detect_active_frame_indices(
         frame_files=frame_files,
@@ -262,19 +275,22 @@ def run_video_analysis(
             "model_path": str(model_path),
         }
 
-    # 2) Build normalized sequence once.
+    # --- 2) normalize + phase sequence ---
     npts_sequence: list[Optional[dict]] = []
     phase_sequence: list[str] = []
+
     for kp_data in all_keypoints:
         flat = compute_virtual_keypoints(kp_data["pts"])
         smoothed = smoother.smooth(flat)
         npts = normalize_pts(smoothed, img_w, img_h) if smoothed else None
+
         phase_metric = extract_phase_metric(npts, exercise_ko)
         current_phase = phase_detector.update(phase_metric) if phase_metric is not None else phase_detector.phase
+
         npts_sequence.append(npts)
         phase_sequence.append(current_phase)
 
-    # 3) Exercise-specific rule-first refinement.
+    # --- 3) exercise-specific rule-first refinement ---
     if exercise_en == "pushup":
         rule_selected, rule_meta = apply_pushup_rule_first_filter(
             npts_sequence=npts_sequence,
@@ -311,6 +327,7 @@ def run_video_analysis(
     for kp in all_keypoints:
         kp["selected_for_analysis"] = kp["frame_idx"] in selected_indices
 
+    # --- counter/evaluator + dtw reference ---
     if exercise_en == "pushup":
         counter = PushUpCounter(fps=extract_fps)
         evaluator = PushUpEvaluator()
@@ -320,32 +337,33 @@ def run_video_analysis(
         evaluator = PullUpEvaluator(grip_type=grip_ko or GRIP_OVERHAND)
         ref_name = "reference_pullup.json"
 
-    # ── DTWScorer 초기화 ──────────────────────────────────────
-    # 우선순위: 레퍼런스 영상 > JSON fallback
-    ref_json_path = ROOT / "ds_modules" / ref_name
-    dtw_scorer = DTWScorer(str(ref_json_path), exercise_ko)
+    # --- DTW 레퍼런스 경로 결정 ---
+    default_ref_json_path = ROOT / "ds_modules" / ref_name
+
+    # ✅ 실시간 reference_json 생성 (요청 전용 파일)
+    runtime_ref_json_path = frames_dir / f"reference_runtime_{exercise_en}.json"
+    use_ref_json_path = default_ref_json_path
 
     if reference_video_path and reference_video_path.exists():
-        # 레퍼런스 영상에서 직접 feature sequence 추출
-        ref_sequences = _extract_reference_sequences(
+        ok = _generate_reference_json_realtime(
             reference_video_path=reference_video_path,
             exercise_ko=exercise_ko,
             extract_fps=extract_fps,
+            out_json_path=runtime_ref_json_path,
         )
-        if ref_sequences:
-            # DTWScorer의 reference를 영상 기반으로 교체
-            dtw_scorer.reference = ref_sequences
-            dtw_scorer.active = True
-            dtw_scorer._phase_scores = {}   # 누적 버퍼 초기화
-            dtw_scorer._current_phase = None
-            dtw_scorer._current_segment = []
-        # ref_sequences가 비어있으면 JSON fallback 그대로 사용
+        if ok:
+            use_ref_json_path = runtime_ref_json_path
+            print(f"🔥 DTW runtime reference 사용: {use_ref_json_path}")
+        else:
+            print("⚠ runtime reference 생성 실패 → 기본 reference JSON fallback")
 
-    dtw_active = dtw_scorer.active
-    # ─────────────────────────────────────────────────────────
+    # --- DTW scorer init ---
+    dtw_scorer = DTWScorer(str(use_ref_json_path), exercise_ko)
+    dtw_active = bool(getattr(dtw_scorer, "active", False))
 
-    frame_scores = []
-    error_frames = []
+    # --- scoring loop ---
+    frame_scores: list[dict] = []
+    error_frames: list[dict] = []
 
     for i, kp_data in enumerate(all_keypoints):
         pts = kp_data["pts"]
@@ -355,6 +373,7 @@ def run_video_analysis(
         was_active = counter.is_active
         counter.update(npts, current_phase)
         is_analysis_active = was_active or counter.is_active
+
         if (not is_analysis_active) or (i not in selected_indices):
             continue
 
@@ -365,27 +384,21 @@ def run_video_analysis(
             dtw_scorer.accumulate(feat_vec, current_phase)
 
         overlay_path = overlays_dir / f"frame_{kp_data['frame_idx']:06d}_skeleton.jpg"
-        rgb = draw_skeleton_on_frame(kp_data["img_path"], kp_data["pts"])
-        
-        skeleton_url = None
-        if rgb is not None:
-            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(str(overlay_path), bgr)
-            skeleton_url = _local_path_to_static_url(str(overlay_path))
-        
-        frame_scores.append(
-    {
-        "frame_idx": kp_data["frame_idx"],
-        "img_url": _local_path_to_static_url(kp_data["img_path"]),
-        "skeleton_url": skeleton_url,  # ✅ 핵심
-        "phase": current_phase,
-        "score": eval_result["score"],
-        "errors": eval_result["errors"],
-        "details": eval_result["details"],
-    }
-)
+        skeleton_url = save_skeleton_overlay(kp_data["img_path"], pts, overlay_path)
 
-        errors = eval_result.get("errors", [])
+        frame_scores.append(
+            {
+                "frame_idx": kp_data["frame_idx"],
+                "img_url": _local_path_to_static_url(kp_data["img_path"]),
+                "skeleton_url": skeleton_url,
+                "phase": current_phase,
+                "score": eval_result.get("score", 0.0),
+                "errors": eval_result.get("errors", []) or [],
+                "details": eval_result.get("details", None),
+            }
+        )
+
+        errors = eval_result.get("errors", []) or []
         if errors and errors != [NO_SPOT_ERROR]:
             error_frames.append(
                 {
@@ -394,13 +407,14 @@ def run_video_analysis(
                     "img_url": _frame_path_to_url(kp_data["img_path"]),
                     "skeleton_url": skeleton_url,
                     "phase": current_phase,
-                    "score": eval_result["score"],
+                    "score": eval_result.get("score", 0.0),
                     "errors": errors,
-                    "details": eval_result["details"],
+                    "details": eval_result.get("details", None),
                     "pts": pts,
                 }
             )
 
+    # --- finalize rep if active ---
     if counter.is_active:
         if len(counter.visited_phases & counter.required_sequence) >= counter.min_required:
             counter.count += 1
@@ -416,8 +430,8 @@ def run_video_analysis(
         "exercise_count": counter.count,
         "frame_scores": frame_scores,
         "error_frames": error_frames,
-        "duration": round(duration, 1),
-        "fps": extract_fps,
+        "duration": round(float(duration), 1),
+        "fps": int(extract_fps),
         "keypoints": all_keypoints,
         "total_frames": len(frame_files),
         "analyzed_frame_count": len(selected_indices),
@@ -428,5 +442,7 @@ def run_video_analysis(
         "success_count": success_count,
         "resolution": list(TARGET_RESOLUTION),
         "dtw_result": dtw_result,
-        "dtw_active": dtw_active,
+        "dtw_active": bool(dtw_active),
+        # 디버깅용: 실제 사용된 레퍼런스 JSON 경로
+        "dtw_reference_json": str(use_ref_json_path),
     }

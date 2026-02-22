@@ -117,6 +117,7 @@ class DTWScorer:
         self._phase_scores: Dict[str, List[float]] = defaultdict(list)
 
         try:
+            #print("🔥 [DTW INIT] reference_path =", reference_path)
             with open(reference_path, "r", encoding="utf-8") as f:
                 ref_data = json.load(f)
 
@@ -124,6 +125,8 @@ class DTWScorer:
             for phase, vectors in ref_data.get("phases", {}).items():
                 if vectors:
                     loaded[phase] = [np.array(v, dtype=np.float64) for v in vectors]
+            
+            #print("🔥 [DTW INIT] loaded phases =", list(loaded.keys()))
 
             if loaded:
                 self.reference = loaded
@@ -147,6 +150,8 @@ class DTWScorer:
     def accumulate(self, feature_vec: Optional[np.ndarray], phase: str):
         if not self.active:
             return
+
+        #print("🔥 [ACC] phase =", phase)    
 
         if phase != self._current_phase:
             if self._current_phase is not None and len(self._current_segment) >= 2:
@@ -172,9 +177,11 @@ class DTWScorer:
             from fastdtw import fastdtw
             from scipy.spatial.distance import euclidean
 
-            n_angles = self._ANGLE_DIMS.get(self.exercise_type, 7)
-            user_seq = [v[:n_angles] for v in self._current_segment]
-            ref_seq  = [v[:n_angles] for v in self.reference[phase]]
+            # n_angles = self._ANGLE_DIMS.get(self.exercise_type, 7)
+            # user_seq = [v[:n_angles] for v in self._current_segment]
+            # ref_seq  = [v[:n_angles] for v in self.reference[phase]]
+            user_seq = self._current_segment
+            ref_seq  = self.reference[phase]
 
             distance, _ = fastdtw(user_seq, ref_seq, radius=1, dist=euclidean)
             avg_distance = distance / max(len(user_seq), len(ref_seq))

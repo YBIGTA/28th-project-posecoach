@@ -136,7 +136,7 @@ export function Home() {
                 desc:
                   "AI 동작 인식을 통해 운동마다 실시간으로 자세 피드백을 알려줍니다.\n" +
                   "쉽고 정확하게 운동에만 집중하세요.",
-                img: "https://images.unsplash.com/photo-1597452329152-52f9eee96576?w=1200&auto=format&fit=crop&q=70",
+                img: "https://cdn.aitimes.com/news/photo/202204/144267_150053_2131.jpg",
               },
               {
                 eyebrow: "동작 흐름 분석",
@@ -145,7 +145,7 @@ export function Home() {
                   "단순한 동작 수행을 넘어, 정교한 DTW 알고리즘이\n" +
                   "모범 자세와의 흐름 차이를 미세하게 분석합니다.\n" +
                   "나의 움직임 궤적이 프로와 얼마나 일치하는지 확인하세요.",
-                img: "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?q=80&w=1200&auto=format&fit=crop",
+                img: "https://lh3.googleusercontent.com/rd-gg-dl/AOI_d_-W0ORIQnof9b8hz6ShumEy-cXjx5et9gzwnQhCuUukr24fIKgxVXrUxPq0a7vbJOABrh4Kq7kmNubiSl3XaDZN6AzUut-i5_WaoLO1nkZ_cZ1ZpPctfFTV3CmOEl0iRAzL0qd4-dnuORjShx2Z1aSePhXJtQukr9qY8U0Tks47IjiivIr0d9Qt29vrVdOwcK9Uvg9nq655vLNX_6oCxohNfzkb-rFwQ_kTDmwLBCD57WsipDL_AsWEEcHHPptnnqB2oSiMYVwLBVNn14J1HnuGTxruBAFxURtnG2ymKDrr39v7bRpBGI_TYROR_zo5NXaxSvs8mIeQEHKKM-kwF0K5hJ0SCdKyfK8L_BA2buvC3wG53pfRpkICd_8SowM6lH_EJb3EylFuQErcWVQHBu6Gb9hb-HcxwDIrUd2GqwZBoprEdtWRd8kygfsWxJy-LR8HQitFIFjJYzaXy8vMUPh9k0A8tO6gFhtsv1Em2hTZa1_zEZa2YnigtMnu-6VCgnw2R1LAXuCs43nDBKxit8mh_GpPQeuacRkLgDnsLRNrv4aoBmzLfDHcOdjj1DhjYL4XypFcYy5OHVexFpicPvmVIvyWj04xdZxfW-cMpgeV5Isc0sNQ7-OVerQ0VQV1_s2NP0VD9Df0CHbXdOpbr4HVc8eI3YzLYhYpLAbp9o61agM5UzhqyF3fFcDSyMOBzqHmbjrWglSx4TuhVMv3tJ88P9u8PDx7niWqzzpKlMfCRsl0_zPYHPCM-xgKCbkwXHNVucU-nlOjqFqjzQmWHUakhvynFuxr2-Eo8oP6xUyar7MJ8DMS_Wxr-9cizFE-h9Eap6m1bRka8jKBSbo4ZcCw_rhG1cNvOuiOPBRcRu9-Y_FCf9rrlHcAYL3b7fBzysxNDQ3jzEtXM4mD_peqXUe8g8-GYj1q7wWLehEk7wYvpRlDB2B20KSewy-BODMu_4L_a5qLDeL2h2sMBLfM67mLcR2fZ0Dg2srZHKU6OOAM3rdxVwSV76h_jJUtP9V034_lIMoiLg_O_5f_I6XLau3MCWZq6izQASNLw2T3ZU2Z04VCCS5v2uI46bPjWUQTkoqErpnhMYhkH4kd_jfICZH9uIQlJijsI6b5UGDIOLlGQcjUK36lT-GeRUoudQWLtMH4IUbSSgBCtpP29CwPDFcPD0cR9CR2ngV5dQQx5u-6IHWy3835q4s=s1024-rj",
               },
               {
                 eyebrow: "AI 리포트",
@@ -154,7 +154,7 @@ export function Home() {
                   "프레임 단위의 정밀한 점수 산정은 물론,\n" +
                   "AI 트레이너가 분석한 취약 구간 교정법과\n" +
                   "성장을 위한 연습 우선순위를 한눈에 정리해 드립니다.",
-                img: "https://images.unsplash.com/photo-1601422407692-ec4eeec1d9b3?q=80&w=1200&auto=format&fit=crop",
+                img: "https://lh3.googleusercontent.com/rd-gg-dl/AOI_d_-yI1YD1Kk6rW-RvuJrfBTydlMAdSHj6fUTS5Gyyz5pWxlI88l-D-y9p5JfrqS79JG4Pw-2z9IBo44_yuWqOW54biqDw5k9h1LdojYGHWOQHNeHiR_ZVi4KMeIYKojcfM4JXp_pIWrzzT2V2OqQFoMdUuzBn1fEkjRWXuRu8zTkBumSdIQx4Wwi3uWgnH5Cpul5WME2i-o42aZ1MhWuWhoQQzHfK2oTrjT7luM5YjDlxyix2gK32kbNQnzUjPzkjwhOqZyUOVRdiPHmqfTGQE3NgId66w98ASpins4UEm9X8iZU2nalQSbNobeBLnC7wASWt5sS1WbJRklqwLxFt9Zz9pKe_VFsgMiZPTPpu2Ba9EQteYhBPp8USPGLiT1iN7LEPFcDVfzkXHos8WpoqxWTiJYASV9dDBkN7sCUzYukHJEPrMmyOweRQmYWCoa33ZZJcc1jJopV4YVjjhCjZV6InU_jbb9f1WvifFH3j0Ac32-lvjcVrErDDFwtbV9sPdvBz5odI2fvEQkK3MP8BjP0jG2ISaaKGvDL9vLINizSx060vk9jJzZq7dTNxLbE88KO6j5OGRtc_3IwTFJ44JwPY3jg_p_cG8eXTEXfi3-71HfGowXVwy9QFrbndYVoYDYBHpJtZnE6WPulWYt75o0J51v-_zqtCrzXRHnOmrkuJH2B8KWSf0w8BnoQPdjiC6916DQA0paUjAgWRTiecBwF9_jDeebzzGJ9P9xbPmbVP-xxwSgg2fyey7MhpzEIR6lTeV6BbI8fr16IY1tNDxd18WjwtFeD8P6cQr0AQHZgvHDoccytaTKN8B42n4CTqvPSylgfRFJnR2pOmomGS-_vM1UEFwOLBdopqkLxeNutFaF34rkfmUKy9Ukkh1yvkfRBFM3HpndVHRyaQLcqap0lATbPNF4FdUR4yTOfEz65B05iu7A-U-sZdPHrsCrL6xQn5QGUz8G3C3uv4R9bZQ1Gg9kvwOFFvxh3WKhyGCkB409PWg6K4RpQaJk0Bkmtpt3_0dfvc1ngNUy-h8ch5KKXojw8-pNTzu4izpxtVfDCMHis2F-DG2tt0aGs8Z33-m2ATgfX3xwTSCD2Pn1cRGvHRLq3pAI2teCijXUOWMTaGprQwGS9vyGMyxWo4FcJeuDJ0ebqQ2RXTFQP-mxyy1XdrHm3NvlD6IGC4WQPD633gKIm93tDsUo=s1024-rj",
               },
             ].map((f, idx) => (
               <ScrollFeatureRow key={f.eyebrow} feature={f} flip={idx % 2 === 1} />

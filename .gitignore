@@ -18,6 +18,8 @@ ds_modules/reference_*.json
 
 .env
 
+data/frames/*
+
 # Web frontend artifacts
 apps/web/node_modules/
 apps/web/dist/
