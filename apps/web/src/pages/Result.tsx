@@ -428,19 +428,18 @@ export function Result() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   {[
                     { label: "사용자 원본", sub: `frame #${selFrame?.frame_idx}`, borderCls: "border-white/8", headerCls: "text-white/30", imgFilter: undefined, imgUrl: selFrame?.img_url, placeholder: "원본 이미지" },
                     { label: "스켈레톤 오버레이", sub: "오류 강조", borderCls: "border-[#c8f135]/15", headerCls: "text-[#c8f135]/50", imgUrl: selFrame?.skeleton_url, placeholder: "스켈레톤" },
-                    { label: "레퍼런스", sub: "모범 동작", borderCls: "border-[#5b8fff]/20", headerCls: "text-[#5b8fff]/60", imgFilter: undefined, imgUrl: null, placeholder: dtw != null ? "레퍼런스" : "레퍼런스 없음" },
                   ].map(col => (
                     <div key={col.label} className={`rounded-xl border ${col.borderCls} overflow-hidden`}>
                       <div className={`px-3 py-2 border-b ${col.borderCls} flex justify-between text-[9px] ${col.headerCls} bg-black/20`} style={{ fontFamily: "DM Mono, monospace" }}>
                         <span>{col.label}</span><span className="text-white/20">{col.sub}</span>
                       </div>
-                      <div className="aspect-[3/4] bg-white/3 flex items-center justify-center">
+                      <div className="bg-black flex items-center justify-center">
                         {col.imgUrl
-                          ? <img src={`${API}${col.imgUrl}`} alt={col.label} className="w-full h-full object-cover" style={col.imgFilter ? { filter: col.imgFilter } : undefined} />
+                          ? <img src={`${API}${col.imgUrl}`} alt={col.label} className="w-full h-auto object-contain" style={col.imgFilter ? { filter: col.imgFilter } : undefined} />
                           : <span className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>{col.placeholder}</span>}
                       </div>
                     </div>
