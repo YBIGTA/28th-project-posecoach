@@ -150,7 +150,7 @@ def build_pdf_bytes(req: ReportRequest) -> bytes:
     story = []
     usable = W - 40*mm
     ex_kor = {"pushup": "푸시업", "pullup": "풀업"}.get(exercise, exercise)
-    grade  = grade_label(avg_score)
+    grade  = grade_label(combined)
 
     # ── 헤더 ──
     hdr = Table([[

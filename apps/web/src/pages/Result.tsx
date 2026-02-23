@@ -139,9 +139,9 @@ export function Result() {
   const dtw      = dtw_active && dtw_result?.overall_dtw_score != null ? dtw_result.overall_dtw_score : null;
   const combined = dtw != null ? avgScore * 0.7 + dtw * 0.3 : avgScore;
   let grade = "C", gradeColor = "#ff6b35";
-  if (avgScore >= 0.9) { grade = "S"; gradeColor = "#c8f135"; }
-  else if (avgScore >= 0.7) { grade = "A"; gradeColor = "#5b8fff"; }
-  else if (avgScore >= 0.5) { grade = "B"; gradeColor = "rgba(255,255,255,0.6)"; }
+  if (combined >= 0.9) { grade = "S"; gradeColor = "#c8f135"; }
+  else if (combined >= 0.7) { grade = "A"; gradeColor = "#5b8fff"; }
+  else if (combined >= 0.5) { grade = "B"; gradeColor = "rgba(255,255,255,0.6)"; }
 
   const byPhase: Record<string, number[]> = {};
   frame_scores.forEach(f => { byPhase[f.phase] = [...(byPhase[f.phase] ?? []), f.score]; });

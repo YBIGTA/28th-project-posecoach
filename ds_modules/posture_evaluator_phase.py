@@ -114,21 +114,31 @@ class PushUpEvaluator:
 
     # ── 내부 유틸 ──────────────────────────────────────
     @staticmethod
-    def _weighted_score(check_results: Dict[str, bool], weight_map: Dict[str, float]) -> tuple:
+    def _soft_score(value: float, threshold: float, margin: float) -> float:
+        """value >= threshold → 1.0, value <= threshold-margin → 0.0, 사이는 선형."""
+        return float(np.clip((value - (threshold - margin)) / margin, 0.0, 1.0))
+
+    @staticmethod
+    def _soft_score_lower(value: float, threshold: float, margin: float) -> float:
+        """value <= threshold → 1.0, value >= threshold+margin → 0.0, 사이는 선형."""
+        return float(np.clip((threshold + margin - value) / margin, 0.0, 1.0))
+
+    @staticmethod
+    def _weighted_score(check_results: Dict[str, float], weight_map: Dict[str, float]) -> tuple:
         """
-        체크 결과(bool)와 가중치 맵으로 가중 점수를 산출한다.
-        score = Σ(w_i · pass_i) / Σ(w_i)   (해당 phase 체크 항목만)
+        체크 결과(0~1 연속값)와 가중치 맵으로 가중 점수를 산출한다.
+        score = Σ(w_i · score_i) / Σ(w_i)
 
         Returns:
-            (score, weights_used) — weights_used는 각 체크별 가중치+판정 dict
+            (score, weights_used)
         """
         total_w = sum(weight_map[k] for k in check_results)
         if total_w < 1e-12:
             return 0.0, {}
-        earned = sum(weight_map[k] for k, passed in check_results.items() if passed)
+        earned = sum(weight_map[k] * v for k, v in check_results.items())
         weights_used = {
-            k: {"weight": round(weight_map[k], 4), "passed": passed}
-            for k, passed in check_results.items()
+            k: {"weight": round(weight_map[k], 4), "passed": v >= 0.5}
+            for k, v in check_results.items()
         }
         return earned / total_w, weights_used
 
@@ -163,44 +173,47 @@ class PushUpEvaluator:
             return {"score": 1.0, "errors": [], "details": {}, "weights_used": {}}
 
     # ── 공통 체크 헬퍼 ─────────────────────────────────
-    def _check_back(self, npts, details, errors) -> bool:
+    def _check_back(self, npts, details, errors) -> float:
         """등 직선 체크. 출처: ACSM 11th ed. — 중립 척추 ≥ 160°"""
         back_angle = cal_angle(npts["Neck"], npts["Waist"], npts["Ankle_C"])
-        if back_angle >= self.BACK_STRAIGHT_THRESHOLD:
+        score = self._soft_score(back_angle, self.BACK_STRAIGHT_THRESHOLD, 20.0)
+        if score >= 0.5:
             details["back_straight"] = {"value": round(back_angle, 1), "status": "ok", "feedback": "등 자세 양호"}
-            return True
-        details["back_straight"] = {"value": round(back_angle, 1), "status": "error", "feedback": "허리를 펴세요"}
-        errors.append("허리를 펴세요")
-        return False
+        else:
+            details["back_straight"] = {"value": round(back_angle, 1), "status": "error", "feedback": "허리를 펴세요"}
+            errors.append("허리를 펴세요")
+        return score
 
-    def _check_hand(self, npts, details, errors, *, moving: bool = False) -> bool:
+    def _check_hand(self, npts, details, errors, *, moving: bool = False) -> float:
         """손 위치 체크. 출처: AI Hub Cohen's d |d|=0.44"""
         waist_x = npts["Waist"][0]
         hand_center_x = (npts["Left Wrist"][0] + npts["Right Wrist"][0]) / 2
         hand_offset = abs(waist_x - hand_center_x)
         ok_fb = "손 위치 유지 중" if moving else "손 위치 적절"
         err_fb = "양손을 균등하게 유지하세요" if moving else "양손을 균등하게 벌려주세요"
-        if hand_offset <= self.HAND_POSITION_THRESHOLD:
+        score = self._soft_score_lower(hand_offset, self.HAND_POSITION_THRESHOLD, 0.05)
+        if score >= 0.5:
             details["hand_position"] = {"value": round(hand_offset, 4), "status": "ok", "feedback": ok_fb}
-            return True
-        details["hand_position"] = {"value": round(hand_offset, 4), "status": "error", "feedback": err_fb}
-        errors.append(err_fb)
-        return False
+        else:
+            details["hand_position"] = {"value": round(hand_offset, 4), "status": "error", "feedback": err_fb}
+            errors.append(err_fb)
+        return score
 
-    def _check_head_tilt(self, npts, details, errors) -> bool:
+    def _check_head_tilt(self, npts, details, errors) -> float:
         """고개 숙임 체크. 출처: AI Hub Cohen's d |d|=0.37"""
         eye_nose_y = ((npts["Left Eye"][1] + npts["Right Eye"][1]) / 2 + npts["Nose"][1]) / 2
         ear_y = (npts["Left Ear"][1] + npts["Right Ear"][1]) / 2
         tilt = eye_nose_y - ear_y
-        if abs(tilt) <= self.HEAD_TILT_THRESHOLD:
+        score = self._soft_score_lower(abs(tilt), self.HEAD_TILT_THRESHOLD, 0.04)
+        if score >= 0.5:
             details["head_tilt"] = {"value": round(tilt, 4), "status": "ok", "feedback": "고개 자세 양호"}
-            return True
-        fb = "고개를 숙이지 마세요" if tilt > 0 else "고개를 들지 마세요"
-        details["head_tilt"] = {"value": round(tilt, 4), "status": "error", "feedback": fb}
-        errors.append(fb)
-        return False
+        else:
+            fb = "고개를 숙이지 마세요" if tilt > 0 else "고개를 들지 마세요"
+            details["head_tilt"] = {"value": round(tilt, 4), "status": "error", "feedback": fb}
+            errors.append(fb)
+        return score
 
-    def _check_shoulder_abd(self, npts, details, errors) -> bool:
+    def _check_shoulder_abd(self, npts, details, errors) -> float:
         """
         어깨 외전각 체크.
         출처: Escamilla et al. (2010), J Strength Cond Res — 권장 45°–75°.
@@ -211,15 +224,18 @@ class PushUpEvaluator:
         abd_r = cal_angle(npts["Right Elbow"], npts["Right Shoulder"], npts["Right Hip"])
         abd_avg = (abd_l + abd_r) / 2
         if self.SHOULDER_ABD_MIN <= abd_avg <= self.SHOULDER_ABD_MAX:
-            details["shoulder_abduction"] = {"value": round(abd_avg, 1), "status": "ok", "feedback": "어깨 외전 양호"}
-            return True
-        if abd_avg > self.SHOULDER_ABD_MAX:
-            fb = "팔꿈치를 몸쪽으로 모아주세요"
+            score = 1.0
+        elif abd_avg > self.SHOULDER_ABD_MAX:
+            score = self._soft_score_lower(abd_avg, self.SHOULDER_ABD_MAX, 20.0)
         else:
-            fb = "팔꿈치를 조금 벌려주세요"
-        details["shoulder_abduction"] = {"value": round(abd_avg, 1), "status": "error", "feedback": fb}
-        errors.append(fb)
-        return False
+            score = self._soft_score(abd_avg, self.SHOULDER_ABD_MIN, 20.0)
+        if score >= 0.5:
+            details["shoulder_abduction"] = {"value": round(abd_avg, 1), "status": "ok", "feedback": "어깨 외전 양호"}
+        else:
+            fb = "팔꿈치를 몸쪽으로 모아주세요" if abd_avg > self.SHOULDER_ABD_MAX else "팔꿈치를 조금 벌려주세요"
+            details["shoulder_abduction"] = {"value": round(abd_avg, 1), "status": "error", "feedback": fb}
+            errors.append(fb)
+        return score
 
     # ── 좌우 비대칭 체크 ─────────────────────────────────
     def _check_arm_symmetry(self, npts, details, errors) -> bool:
@@ -263,20 +279,19 @@ class PushUpEvaluator:
         """
         errors: List[str] = []
         details: Dict = {}
-        checks: Dict[str, bool] = {}
+        checks: Dict[str, float] = {}
 
         try:
             # 1. 팔 펴짐 — NSCA 4th ed.: 완전 신전 > 160°
             arm_l = cal_angle(npts["Left Shoulder"], npts["Left Elbow"], npts["Left Wrist"])
             arm_r = cal_angle(npts["Right Shoulder"], npts["Right Elbow"], npts["Right Wrist"])
             arm_avg = (arm_l + arm_r) / 2
-            if arm_avg > self.ARM_EXTENDED:
+            checks["elbow_angle"] = self._soft_score(arm_avg, self.ARM_EXTENDED, 20.0)
+            if checks["elbow_angle"] >= 0.5:
                 details["arm_extended"] = {"value": round(arm_avg, 1), "status": "ok", "feedback": "팔 펴짐 충분"}
-                checks["elbow_angle"] = True
             else:
                 details["arm_extended"] = {"value": round(arm_avg, 1), "status": "error", "feedback": "팔을 완전히 펴주세요"}
                 errors.append("팔을 완전히 펴주세요")
-                checks["elbow_angle"] = False
 
             # 2~5. 공통 체크
             checks["back_angle"] = self._check_back(npts, details, errors)
@@ -307,7 +322,7 @@ class PushUpEvaluator:
         """
         errors: List[str] = []
         details: Dict = {}
-        checks: Dict[str, bool] = {}
+        checks: Dict[str, float] = {}
 
         try:
             checks["back_angle"] = self._check_back(npts, details, errors)
@@ -330,20 +345,19 @@ class PushUpEvaluator:
         """
         errors: List[str] = []
         details: Dict = {}
-        checks: Dict[str, bool] = {}
+        checks: Dict[str, float] = {}
 
         try:
             # 1. 팔 구부림 — NSCA 4th ed.: bottom에서 ≤ 90°, 여기서 관대하게 < 120°
             arm_l = cal_angle(npts["Left Shoulder"], npts["Left Elbow"], npts["Left Wrist"])
             arm_r = cal_angle(npts["Right Shoulder"], npts["Right Elbow"], npts["Right Wrist"])
             arm_avg = (arm_l + arm_r) / 2
-            if arm_avg < self.ARM_BENT:
+            checks["elbow_angle"] = self._soft_score_lower(arm_avg, self.ARM_BENT, 20.0)
+            if checks["elbow_angle"] >= 0.5:
                 details["arm_bent"] = {"value": round(arm_avg, 1), "status": "ok", "feedback": "팔 구부림 충분"}
-                checks["elbow_angle"] = True
             else:
                 details["arm_bent"] = {"value": round(arm_avg, 1), "status": "error", "feedback": "더 깊이 내려가세요"}
                 errors.append("더 깊이 내려가세요")
-                checks["elbow_angle"] = False
 
             # 2~5. 공통 체크
             checks["back_angle"] = self._check_back(npts, details, errors)
@@ -489,10 +503,20 @@ class PullUpEvaluator:
 
     # ── 내부 유틸 ──────────────────────────────────────
     @staticmethod
-    def _weighted_score(check_results: Dict[str, bool], weight_map: Dict[str, float]) -> tuple:
+    def _soft_score(value: float, threshold: float, margin: float) -> float:
+        """value >= threshold → 1.0, value <= threshold-margin → 0.0, 사이는 선형."""
+        return float(np.clip((value - (threshold - margin)) / margin, 0.0, 1.0))
+
+    @staticmethod
+    def _soft_score_lower(value: float, threshold: float, margin: float) -> float:
+        """value <= threshold → 1.0, value >= threshold+margin → 0.0, 사이는 선형."""
+        return float(np.clip((threshold + margin - value) / margin, 0.0, 1.0))
+
+    @staticmethod
+    def _weighted_score(check_results: Dict[str, float], weight_map: Dict[str, float]) -> tuple:
         """
-        체크 결과(bool)와 가중치 맵으로 가중 점수를 산출한다.
-        score = Σ(w_i · pass_i) / Σ(w_i)
+        체크 결과(0~1 연속값)와 가중치 맵으로 가중 점수를 산출한다.
+        score = Σ(w_i · score_i) / Σ(w_i)
 
         Returns:
             (score, weights_used)
@@ -500,10 +524,10 @@ class PullUpEvaluator:
         total_w = sum(weight_map[k] for k in check_results)
         if total_w < 1e-12:
             return 0.0, {}
-        earned = sum(weight_map[k] for k, passed in check_results.items() if passed)
+        earned = sum(weight_map[k] * v for k, v in check_results.items())
         weights_used = {
-            k: {"weight": round(weight_map[k], 4), "passed": passed}
-            for k, passed in check_results.items()
+            k: {"weight": round(weight_map[k], 4), "passed": v >= 0.5}
+            for k, v in check_results.items()
         }
         return earned / total_w, weights_used
 
@@ -538,7 +562,7 @@ class PullUpEvaluator:
             return {"score": 1.0, "errors": [], "details": {}, "weights_used": {}}
 
     # ── 공통 체크 헬퍼 ─────────────────────────────────
-    def _check_head_tilt(self, npts, details, errors) -> bool:
+    def _check_head_tilt(self, npts, details, errors) -> float:
         """
         고개 방향(시선) 체크.
         출처: Ronai & Scibek (2014), Strength & Cond J — 중립 두부 유지.
@@ -548,14 +572,15 @@ class PullUpEvaluator:
         eye_nose_y = ((npts["Left Eye"][1] + npts["Right Eye"][1]) / 2 + npts["Nose"][1]) / 2
         ear_y = (npts["Left Ear"][1] + npts["Right Ear"][1]) / 2
         tilt = eye_nose_y - ear_y
-        if tilt <= self.HEAD_TILT_THRESHOLD:
+        score = self._soft_score_lower(tilt, self.HEAD_TILT_THRESHOLD, 0.04)
+        if score >= 0.5:
             details["head_tilt"] = {"value": round(tilt, 4), "status": "ok", "feedback": "시선 양호"}
-            return True
-        details["head_tilt"] = {"value": round(tilt, 4), "status": "error", "feedback": "시선을 위로 유지하세요"}
-        errors.append("시선을 위로 유지하세요")
-        return False
+        else:
+            details["head_tilt"] = {"value": round(tilt, 4), "status": "error", "feedback": "시선을 위로 유지하세요"}
+            errors.append("시선을 위로 유지하세요")
+        return score
 
-    def _check_shoulder_packing(self, npts, details, errors) -> bool:
+    def _check_shoulder_packing(self, npts, details, errors) -> float:
         """
         숄더패킹 체크.
         출처: Youdas et al. (2010), J Strength Cond Res — 하승모근 45-56% MVIC.
@@ -565,14 +590,15 @@ class PullUpEvaluator:
         shoulder_mid_y = (npts["Left Shoulder"][1] + npts["Right Shoulder"][1]) / 2
         neck_y = npts["Neck"][1]
         diff = shoulder_mid_y - neck_y
-        if diff >= -self.SHOULDER_PACKING_THRESHOLD:
+        score = self._soft_score(diff, -self.SHOULDER_PACKING_THRESHOLD, 0.02)
+        if score >= 0.5:
             details["shoulder_packing"] = {"value": round(diff, 4), "status": "ok", "feedback": "어깨 패킹 유지 중"}
-            return True
-        details["shoulder_packing"] = {"value": round(diff, 4), "status": "error", "feedback": "어깨를 내려주세요"}
-        errors.append("어깨를 내려주세요")
-        return False
+        else:
+            details["shoulder_packing"] = {"value": round(diff, 4), "status": "error", "feedback": "어깨를 내려주세요"}
+            errors.append("어깨를 내려주세요")
+        return score
 
-    def _check_elbow_flare(self, npts, details, errors) -> bool:
+    def _check_elbow_flare(self, npts, details, errors) -> float:
         """
         팔꿈치 벌림 체크.
         출처: Prinold & Bull (2016) — 견갑면 이탈 < 28-30° 권장.
@@ -583,18 +609,19 @@ class PullUpEvaluator:
         shoulder_dist = cal_distance(npts["Left Shoulder"], npts["Right Shoulder"])
         if shoulder_dist < 1e-6:
             details["elbow_direction"] = {"value": 0.0, "status": "ok", "feedback": "측정 불가 — 패스"}
-            return True
+            return 1.0
         ratio = elbow_dist / shoulder_dist
-        if ratio <= self.elbow_flare_ratio:
+        score = self._soft_score_lower(ratio, self.elbow_flare_ratio, 0.5)
+        if score >= 0.5:
             details["elbow_direction"] = {"value": round(ratio, 2), "status": "ok",
                                           "feedback": f"팔꿈치 방향 양호 ({self.grip_type} 기준)"}
-            return True
-        details["elbow_direction"] = {"value": round(ratio, 2), "status": "error",
-                                      "feedback": f"팔꿈치를 몸쪽으로 당기세요 ({self.grip_type} 기준 {self.elbow_flare_ratio}x 초과)"}
-        errors.append("팔꿈치를 몸쪽으로 당기세요")
-        return False
+        else:
+            details["elbow_direction"] = {"value": round(ratio, 2), "status": "error",
+                                          "feedback": f"팔꿈치를 몸쪽으로 당기세요 ({self.grip_type} 기준 {self.elbow_flare_ratio}x 초과)"}
+            errors.append("팔꿈치를 몸쪽으로 당기세요")
+        return score
 
-    def _check_body_sway(self, npts, details, errors) -> bool:
+    def _check_body_sway(self, npts, details, errors) -> float:
         """
         몸통 흔들림 체크.
         출처: Dinunzio et al. (2019), Sports Biomechanics — 스트릭트 vs 키핑
@@ -606,12 +633,13 @@ class PullUpEvaluator:
             waist_var = float(np.var(self.waist_x_history))
         else:
             waist_var = 0.0
-        if waist_var <= self.BODY_SWAY_THRESHOLD:
+        score = self._soft_score_lower(waist_var, self.BODY_SWAY_THRESHOLD, self.BODY_SWAY_THRESHOLD)
+        if score >= 0.5:
             details["body_sway"] = {"value": round(waist_var, 6), "status": "ok", "feedback": "몸 안정"}
-            return True
-        details["body_sway"] = {"value": round(waist_var, 6), "status": "error", "feedback": "제자리에서 운동하세요"}
-        errors.append("제자리에서 운동하세요")
-        return False
+        else:
+            details["body_sway"] = {"value": round(waist_var, 6), "status": "error", "feedback": "제자리에서 운동하세요"}
+            errors.append("제자리에서 운동하세요")
+        return score
 
     # ── 좌우 비대칭 체크 ─────────────────────────────────
     def _check_arm_symmetry(self, npts, details, errors) -> bool:
@@ -655,7 +683,7 @@ class PullUpEvaluator:
         """
         errors: List[str] = []
         details: Dict = {}
-        checks: Dict[str, bool] = {}
+        checks: Dict[str, float] = {}
 
         try:
             checks["head_tilt"] = self._check_head_tilt(npts, details, errors)
@@ -682,7 +710,7 @@ class PullUpEvaluator:
         """
         errors: List[str] = []
         details: Dict = {}
-        checks: Dict[str, bool] = {}
+        checks: Dict[str, float] = {}
 
         try:
             checks["shoulder_packing"] = self._check_shoulder_packing(npts, details, errors)
@@ -708,7 +736,7 @@ class PullUpEvaluator:
         """
         errors: List[str] = []
         details: Dict = {}
-        checks: Dict[str, bool] = {}
+        checks: Dict[str, float] = {}
 
         try:
             checks["shoulder_packing"] = self._check_shoulder_packing(npts, details, errors)

@@ -69,7 +69,7 @@ def extract_pullup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
     - head_tilt: 고개 숙임
     - shoulder_packing: 어깨 패킹 (shoulder_mid_y - neck_y)
     - elbow_flare: 팔꿈치 벌림 비율 (elbow_dist / shoulder_dist)
-    - body_sway: waist_x (흔들림 추적용 단일값)
+    - body_sway: waist_x - neck_x (목 대비 허리 상대 위치, 카메라 위치 무관)
     """
     try:
         elbow_l = cal_angle(npts["Left Shoulder"], npts["Left Elbow"], npts["Left Wrist"])
@@ -89,7 +89,7 @@ def extract_pullup_angles(npts: Dict[str, List[float]]) -> Optional[np.ndarray]:
         elbow_flare = elbow_dist / shoulder_dist if shoulder_dist > 1e-6 else 0.0
         elbow_flare = min(elbow_flare / 3.0, 1.0)
 
-        body_sway = npts["Waist"][0]
+        body_sway = npts["Waist"][0] - npts["Neck"][0]
 
         return np.array([
             elbow_l / 180.0,
