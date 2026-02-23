@@ -1,0 +1,18 @@
+{
+  "head_tilt": {
+    "d": -0.856,
+    "weight": 0.5275
+  },
+  "shoulder_packing": {
+    "d": 0.3216,
+    "weight": 0.1982
+  },
+  "elbow_flare": {
+    "d": 0.3127,
+    "weight": 0.1927
+  },
+  "body_sway": {
+    "d": 0.1325,
+    "weight": 0.0816
+  }
+}

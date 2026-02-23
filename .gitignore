@@ -1,0 +1,37 @@
+.claude/
+.DS_Store
+__pycache__/
+
+# 영상/데이터 (대용량)
+preprocess/data/
+labels.csv
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.jpg
+# 분석 결과 JSON
+*_analysis_phase*.json
+
+# DTW 레퍼런스 (모범 영상에서 생성, 각 환경에서 재생성)
+ds_modules/reference_*.json
+
+.env
+
+data/frames/*
+
+data/posecoach.db
+
+# Web frontend artifacts
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.env
+data/
+assets/hero.png
+data/
+assets/hero.png
+data/
+assets/hero.png
+data/
+assets/hero.png

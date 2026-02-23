@@ -1,0 +1,15 @@
+streamlit
+opencv-python==4.13.0.92
+ultralytics==8.4.14
+numpy
+pandas
+scipy
+fastdtw
+bcrypt
+plotly
+python-dotenv
+requests
+fastapi
+uvicorn
+python-multipart
+reportlab==4.4.10
