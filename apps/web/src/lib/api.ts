@@ -1,3 +1,5 @@
+// 프로덕션(HF Spaces): VITE_API_BASE_URL="" → 같은 서버, 상대경로
+// 로컬 개발: VITE_API_BASE_URL="http://127.0.0.1:8000"
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
 

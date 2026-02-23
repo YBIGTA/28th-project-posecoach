@@ -1,3 +1,13 @@
+---
+title: PoseCoach
+emoji: 🏋️
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # PoseCoaching - AI 기반 운동 자세 분석 시스템
 
 YOLO Pose 모델과 DTW(Dynamic Time Warping) 알고리즘을 활용하여 운동 영상을 분석하고, 자세 교정 피드백을 제공하는 Streamlit 웹 애플리케이션입니다.
