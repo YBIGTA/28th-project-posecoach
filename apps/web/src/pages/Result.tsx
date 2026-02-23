@@ -183,6 +183,7 @@ export function Result() {
   const selFrame = scoreByFrame.get(selectedFrameIdx);
   const selFrameKeypoint = keypointByFrame.get(selectedFrameIdx);
   const selFrameIncluded = selectedFrameSet.has(selectedFrameIdx);
+  const selFrameEvaluated = Boolean(selFrame);
   const selFrameImageUrl = selFrame?.img_url ?? selFrameKeypoint?.img_url;
   const jumpToCursor = (nextCursor: number) => {
     setFrameIdx(Math.min(Math.max(nextCursor, 0), maxVisibleCursor));
@@ -539,8 +540,8 @@ export function Result() {
                   ) : (
                     <Chip color="#999">점수 없음</Chip>
                   )}
-                  <Chip color={selFrameIncluded ? "#5b8fff" : "#ff6b35"}>
-                    {selFrameIncluded ? "평가 포함" : "평가 제외"}
+                  <Chip color={selFrameEvaluated ? "#5b8fff" : "#ff6b35"}>
+                    {selFrameEvaluated ? "평가 포함" : "평가 제외"}
                   </Chip>
                   <span className="flex-1" />
                   <span className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>
@@ -578,7 +579,9 @@ export function Result() {
                 )}
                 {!selFrame && (
                   <div className="rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-[10px] text-white/60" style={{ fontFamily: "DM Mono, monospace" }}>
-                    이 프레임은 평가에서 제외되었습니다. (필터링된 휴식/비활성 구간)
+                    {selFrameIncluded
+                      ? "필터에는 포함되었지만 평가 대상 phase가 아니라 점수가 없습니다."
+                      : "이 프레임은 평가에서 제외되었습니다. (필터링된 휴식/비활성 구간)"}
                   </div>
                 )}
               </div>
