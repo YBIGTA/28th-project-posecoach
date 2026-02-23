@@ -16,11 +16,11 @@ FROM python:3.11-slim
 
 # OpenCV / ffmpeg 시스템 의존성
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,7 +28,10 @@ WORKDIR /app
 
 # Python 의존성 먼저 (캐시 활용)
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
+# 서버 환경: GUI 불필요한 headless 버전 사용
+RUN pip install --no-cache-dir \
+        opencv-python-headless \
+    && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir \
         google-generativeai \
         pydantic \
