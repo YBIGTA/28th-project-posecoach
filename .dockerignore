@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+
+apps/web/node_modules
+apps/web/dist
+
+data/frames
+data/uploads
+data/*.db
+
+*.log
+*.tmp
+*.swp

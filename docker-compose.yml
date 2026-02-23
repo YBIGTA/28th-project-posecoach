@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: posecoach-api
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: posecoach-web
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+    restart: unless-stopped

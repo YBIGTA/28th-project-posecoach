@@ -1,7 +1,7 @@
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
 
-const PROTOTYPE_GEMINI_API_KEY = "AIzaSyCNVNNZkO0s7lJx6AQYZ8WMJUuxX-FzBAw";
+const PROTOTYPE_GEMINI_API_KEY = "";
 const ENV_GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ?? "";
 
 export type AnalysisResults = {

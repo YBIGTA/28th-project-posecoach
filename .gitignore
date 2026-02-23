@@ -26,3 +26,6 @@ data/posecoach.db
 apps/web/node_modules/
 apps/web/dist/
 apps/web/.env
+
+
+*.pem
