@@ -18,7 +18,11 @@ ds_modules/reference_*.json
 
 .env
 
-data/frames/*
+data/frames/
+data/uploads/
+*.pptx
+*.pdf
+make_ppt.py
 
 data/posecoach.db
 
