@@ -6,11 +6,17 @@ import { getSession } from "../lib/auth";
 import { generateGeminiFeedback } from "../lib/api";
 
 type FrameScore = {
-  frame_idx: number; img_url?: string; skeleton_url?: string; phase: string;
+  frame_idx: number; img_url?: string | null; skeleton_url?: string | null; phase: string;
   score: number; errors: string[];
   details?: Record<string, { status: string; value: string; feedback: string }>;
 };
 type ErrorFrame = FrameScore;
+type KeypointFrame = {
+  frame_idx: number;
+  img_url?: string | null;
+  pts?: Record<string, { x: number; y: number; z?: number; vis: number }> | null;
+  selected_for_analysis?: boolean;
+};
 type DtwResult = {
   overall_dtw_score?: number;
   phase_dtw_scores?: Record<string, number>;
@@ -20,12 +26,25 @@ type DtwResult = {
 type AnalysisResults = {
   video_name: string; exercise_type: string; exercise_count: number;
   frame_scores: FrameScore[]; error_frames: ErrorFrame[];
+  keypoints?: KeypointFrame[];
   duration: number; fps: number; total_frames: number;
+  analyzed_frame_count?: number;
+  filtered_out_count?: number;
+  selected_frame_indices?: number[];
+  filtering?: {
+    method?: string;
+    reason?: string;
+    model_path?: string;
+    rule_active_frames?: number;
+    rule_rest_frames?: number;
+    ml_fallback_frames?: number;
+  };
   dtw_result?: DtwResult; dtw_active: boolean;
 };
 
 const API = (import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:8000";
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+const ALL_PHASE = "__ALL_PHASE__";
 
 const STEPS = ["운동 선택", "그립 선택", "결과 확인"];
 
@@ -94,7 +113,7 @@ export function Result() {
   const [activeTab, setActiveTab] = useState<"phase" | "review" | "ai">("phase");
   const [selErrIdx, setSelErrIdx] = useState(0);
   const [frameIdx, setFrameIdx]   = useState(0);
-  const [selPhase, setSelPhase]   = useState<string>("전체");
+  const [selPhase, setSelPhase]   = useState<string>(ALL_PHASE);
   const [geminiKey, setGeminiKey] = useState("");
   const [feedback, setFeedback]   = useState<string | null>(null);
   const [fbLoading, setFbLoading] = useState(false);
@@ -130,11 +149,45 @@ export function Result() {
   const phaseCnt = Object.entries(byPhase).map(([p, sc]) => ({ phase: p, cnt: sc.length }));
   const maxCnt   = Math.max(...phaseCnt.map(p => p.cnt), 1);
 
-  const filteredFrames = selPhase === "전체" ? frame_scores : frame_scores.filter(f => f.phase === selPhase);
-  const selFrame =
-  filteredFrames.length > 0
-    ? filteredFrames[Math.min(frameIdx, filteredFrames.length - 1)]
-    : undefined;
+  const totalFrames = Math.max(res.total_frames ?? 0, 0);
+  const allFrameIndices = Array.from({ length: totalFrames }, (_, idx) => idx);
+  const scoreByFrame = new Map(frame_scores.map(frame => [frame.frame_idx, frame] as const));
+  const keypointByFrame = new Map((res.keypoints ?? []).map(frame => [frame.frame_idx, frame] as const));
+  const selectedFrameSet = (() => {
+    const explicit = res.selected_frame_indices ?? [];
+    if (explicit.length > 0) {
+      return new Set(explicit);
+    }
+
+    const payloadSelected = (res.keypoints ?? [])
+      .filter(frame => frame.selected_for_analysis)
+      .map(frame => frame.frame_idx);
+    if (payloadSelected.length > 0) {
+      return new Set(payloadSelected);
+    }
+
+    return new Set(frame_scores.map(frame => frame.frame_idx));
+  })();
+
+  const visibleFrameIndices = selPhase === ALL_PHASE
+    ? allFrameIndices
+    : allFrameIndices.filter((idx) => scoreByFrame.get(idx)?.phase === selPhase);
+
+  const safeFrameCursor = visibleFrameIndices.length > 0
+    ? Math.min(frameIdx, visibleFrameIndices.length - 1)
+    : 0;
+  const maxVisibleCursor = Math.max(visibleFrameIndices.length - 1, 0);
+  const canGoPrev = safeFrameCursor > 0;
+  const canGoNext = safeFrameCursor < maxVisibleCursor;
+  const selectedFrameIdx = visibleFrameIndices[safeFrameCursor] ?? 0;
+  const selFrame = scoreByFrame.get(selectedFrameIdx);
+  const selFrameKeypoint = keypointByFrame.get(selectedFrameIdx);
+  const selFrameIncluded = selectedFrameSet.has(selectedFrameIdx);
+  const selFrameImageUrl = selFrame?.img_url ?? selFrameKeypoint?.img_url;
+  const jumpToCursor = (nextCursor: number) => {
+    setFrameIdx(Math.min(Math.max(nextCursor, 0), maxVisibleCursor));
+  };
+  const jumpBy = (delta: number) => jumpToCursor(safeFrameCursor + delta);
   const selErr = error_frames.length > 0 ? error_frames[selErrIdx] : undefined;
 
   const errCount: Record<string, number> = {};
@@ -384,19 +437,77 @@ export function Result() {
               <div className="border-t border-white/8 pt-8 flex flex-col gap-5">
                 <div className="text-[10px] text-[#c8f135] tracking-widest" style={{ fontFamily: "DM Mono, monospace" }}>🔍 전체구간 리뷰</div>
                 <div className="rounded-xl border border-white/8 bg-white/3 p-5 flex flex-col gap-4">
-                  <div className="flex justify-between text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>
-                    <span>프레임 탐색바</span>
-                    <span className="text-[#c8f135]">frame #{selFrame?.frame_idx ?? 0} / {filteredFrames.length}</span>
+                  <div className="flex justify-between items-center text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>
+                    <span>프레임 내비게이터</span>
+                    <span className="text-[#c8f135]">frame #{selectedFrameIdx} / {Math.max(totalFrames - 1, 0)}</span>
                   </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => jumpBy(-1)}
+                      disabled={!canGoPrev}
+                      className={`text-[10px] rounded-md px-3 py-1.5 border ${canGoPrev ? "border-white/20 text-white/70 hover:border-white/40" : "border-white/10 text-white/20 cursor-not-allowed"}`}
+                      style={{ fontFamily: "DM Mono, monospace" }}
+                    >
+                      ← 이전
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => jumpBy(1)}
+                      disabled={!canGoNext}
+                      className={`text-[10px] rounded-md px-3 py-1.5 border ${canGoNext ? "border-white/20 text-white/70 hover:border-white/40" : "border-white/10 text-white/20 cursor-not-allowed"}`}
+                      style={{ fontFamily: "DM Mono, monospace" }}
+                    >
+                      다음 →
+                    </button>
+                  </div>
+
+                  <input
+                    type="range"
+                    min={0}
+                    max={maxVisibleCursor}
+                    value={safeFrameCursor}
+                    onChange={e => jumpToCursor(+e.target.value)}
+                    className="w-full accent-[#c8f135] cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[8px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>
+                    <span>0</span>
+                    <span>{Math.max(totalFrames - 1, 0)}</span>
+                  </div>
+
                   <div className="relative">
                     <div className="h-6 bg-white/5 rounded-lg overflow-hidden relative">
-                      {filteredFrames.map((f, i) => (
-                        <div key={i} style={{ position: "absolute", top: 0, left: `${(i / filteredFrames.length) * 100}%`, width: `${(1 / filteredFrames.length) * 100}%`, height: "100%", background: (PHASE_COLOR[f.phase] ?? "#444").replace("0.7","0.5").replace("0.55","0.4") }} />
-                      ))}
+                      {visibleFrameIndices.map((frameNo, i) => {
+                        const frameScore = scoreByFrame.get(frameNo);
+                        const included = selectedFrameSet.has(frameNo);
+                        const frameColor = frameScore
+                          ? (PHASE_COLOR[frameScore.phase] ?? "#444").replace("0.7", "0.5").replace("0.55", "0.4")
+                          : "rgba(255,255,255,0.08)";
+                        const background = included ? frameColor : "rgba(255,107,53,0.25)";
+                        const width = visibleFrameIndices.length > 0 ? `${(1 / visibleFrameIndices.length) * 100}%` : "0%";
+                        const left = visibleFrameIndices.length > 0 ? `${(i / visibleFrameIndices.length) * 100}%` : "0%";
+                        return (
+                          <div
+                            key={frameNo}
+                            style={{ position: "absolute", top: 0, left, width, height: "100%", background }}
+                          />
+                        );
+                      })}
+                      {visibleFrameIndices.length > 0 && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: `${(safeFrameCursor / Math.max(visibleFrameIndices.length - 1, 1)) * 100}%`,
+                            transform: "translateX(-1px)",
+                            width: 2,
+                            height: "100%",
+                            background: "#c8f135",
+                          }}
+                        />
+                      )}
                     </div>
-                    <input type="range" min={0} max={Math.max(filteredFrames.length - 1, 0)} value={frameIdx}
-                      onChange={e => setFrameIdx(+e.target.value)}
-                      className="absolute inset-0 opacity-0 w-full cursor-pointer" />
                   </div>
                   <div className="flex gap-4 flex-wrap">
                     {Object.entries(PHASE_COLOR).filter(([p]) => byPhase[p]).map(([p, c]) => (
@@ -409,28 +520,37 @@ export function Result() {
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[9px] text-white/30" style={{ fontFamily: "DM Mono, monospace" }}>구간 선택</span>
-                  {["전체", ...Object.keys(byPhase)].map(p => (
+                  {[ALL_PHASE, ...Object.keys(byPhase)].map(p => (
                     <button key={p} onClick={() => { setSelPhase(p); setFrameIdx(0); }}
                       className={`text-[9px] rounded-full px-3 py-1 border transition-all cursor-pointer
                         ${selPhase === p ? "bg-[#c8f135]/10 border-[#c8f135]/40 text-[#c8f135]" : "bg-transparent border-white/10 text-white/30 hover:border-white/30"}`}
                       style={{ fontFamily: "DM Mono, monospace" }}>
-                      {p}
+                      {p === ALL_PHASE ? "전체" : p}
                     </button>
                   ))}
                 </div>
 
-                {selFrame && (
-                  <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/3 px-4 py-3">
-                    <Chip color="#c8f135">{selFrame.phase}</Chip>
+                <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/3 px-4 py-3">
+                  <Chip color={selFrame ? "#c8f135" : "#999"}>
+                    {selFrame?.phase ?? "평가 없음"}
+                  </Chip>
+                  {selFrame ? (
                     <Chip color={selFrame.score < 0.7 ? "#ff6b35" : "#5b8fff"}>자세 점수: {pct(selFrame.score)}</Chip>
-                    <span className="flex-1" />
-                    <span className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>← 슬라이더로 이동</span>
-                  </div>
-                )}
+                  ) : (
+                    <Chip color="#999">점수 없음</Chip>
+                  )}
+                  <Chip color={selFrameIncluded ? "#5b8fff" : "#ff6b35"}>
+                    {selFrameIncluded ? "평가 포함" : "평가 제외"}
+                  </Chip>
+                  <span className="flex-1" />
+                  <span className="text-[9px] text-white/20" style={{ fontFamily: "DM Mono, monospace" }}>
+                    frame #{selectedFrameIdx}
+                  </span>
+                </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   {[
-                    { label: "사용자 원본", sub: `frame #${selFrame?.frame_idx}`, borderCls: "border-white/8", headerCls: "text-white/30", imgFilter: undefined, imgUrl: selFrame?.img_url, placeholder: "원본 이미지" },
+                    { label: "사용자 원본", sub: `frame #${selectedFrameIdx}`, borderCls: "border-white/8", headerCls: "text-white/30", imgFilter: undefined, imgUrl: selFrameImageUrl, placeholder: "원본 이미지" },
                     { label: "스켈레톤 오버레이", sub: "오류 강조", borderCls: "border-[#c8f135]/15", headerCls: "text-[#c8f135]/50", imgUrl: selFrame?.skeleton_url, placeholder: "스켈레톤" },
                   ].map(col => (
                     <div key={col.label} className={`rounded-xl border ${col.borderCls} overflow-hidden`}>
@@ -453,8 +573,13 @@ export function Result() {
                     ))}
                   </div>
                 )}
-                {selFrame && (selFrame.errors ?? []).length > 0 && (
+                {selFrame && (selFrame.errors ?? []).length === 0 && (
                   <div className="rounded-lg bg-[#c8f135]/5 border border-[#c8f135]/15 px-4 py-2 text-[10px] text-[#c8f135]/70" style={{ fontFamily: "DM Mono, monospace" }}>✅ 감지된 자세 오류 없음</div>
+                )}
+                {!selFrame && (
+                  <div className="rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-[10px] text-white/60" style={{ fontFamily: "DM Mono, monospace" }}>
+                    이 프레임은 평가에서 제외되었습니다. (필터링된 휴식/비활성 구간)
+                  </div>
                 )}
               </div>
             </div>
