@@ -74,14 +74,20 @@ export function UploadVideo() {
   const [fps, setFps] = useState<number>(10);
 
   useEffect(() => {
-    if (!mainFile) { setMainUrl(null); return; }
+    if (!mainFile) {
+      setMainUrl(null);
+      return;
+    }
     const url = URL.createObjectURL(mainFile);
     setMainUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [mainFile]);
 
   useEffect(() => {
-    if (!refFile) { setRefUrl(null); return; }
+    if (!refFile) {
+      setRefUrl(null);
+      return;
+    }
     const url = URL.createObjectURL(refFile);
     setRefUrl(url);
     return () => URL.revokeObjectURL(url);
@@ -90,7 +96,7 @@ export function UploadVideo() {
   useEffect(() => {
     if (!analyzing) return;
     setTipIdx(0);
-    const t = setInterval(() => setTipIdx(p => (p + 1) % TIPS.length), 2500);
+    const t = setInterval(() => setTipIdx((p) => (p + 1) % TIPS.length), 2500);
     return () => clearInterval(t);
   }, [analyzing]);
 
@@ -124,7 +130,6 @@ export function UploadVideo() {
   return (
     <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex items-center justify-center px-6 py-10">
       <div className="w-full max-w-[1400px] rounded-[30px] border border-white/10 bg-[#0f1116]/80 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden">
-
         {/* ── HEADER (Home 통일) ── */}
         <header className="flex items-center justify-between px-8 py-6 border-b border-white/10 backdrop-blur-xl bg-black/40">
           <button
@@ -146,30 +151,27 @@ export function UploadVideo() {
             </Button>
 
             {session && (
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-8 px-3 border-[#c8f135]/40 text-[#c8f135] hover:bg-[#c8f135]/10"
-        onClick={() => navigate("/mypage")}
-      >
-        마이페이지
-      </Button>
-    )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3 border-[#c8f135]/40 text-[#c8f135] hover:bg-[#c8f135]/10"
+                onClick={() => navigate("/mypage")}
+              >
+                마이페이지
+              </Button>
+            )}
           </div>
         </header>
 
         {/* CONTENT */}
         <div className="px-10 py-12">
-
           <StepBar current={1} />
 
           {/* 타이틀 */}
           <div className="text-center mt-10 mb-8">
             <div className="text-[#c8f135] text-xs tracking-widest mb-2">STEP 2</div>
             <h1 className="text-[clamp(2rem,4vw,3rem)] font-extrabold">영상 업로드</h1>
-            <p className="text-white/40 text-sm mt-3">
-              분석을 위한 영상을 업로드하세요.
-            </p>
+            <p className="text-white/40 text-sm mt-3">분석을 위한 영상을 업로드하세요.</p>
           </div>
 
           {/* ✅ FPS 설정 + ✅ 활성 배지 (설정 요약 박스 제거하고 여기로 이동/확대) */}
@@ -237,7 +239,6 @@ export function UploadVideo() {
 
           {/* 2열 업로드 */}
           <div className="grid md:grid-cols-2 gap-10 max-w-[1200px] mx-auto mb-14">
-
             {/* 사용자 영상 */}
             <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
               <div className="flex justify-between items-start mb-6">
@@ -256,14 +257,41 @@ export function UploadVideo() {
                     type="file"
                     hidden
                     accept="video/*"
-                    onChange={e => {
+                    onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) setMainFile(f);
                     }}
                   />
                 </label>
               ) : (
-                <video src={mainUrl ?? undefined} controls className="rounded-xl w-full" />
+                <div className="space-y-4">
+                  <video src={mainUrl ?? undefined} controls className="rounded-xl w-full" />
+
+                  <div className="flex justify-center gap-3">
+                    <label className="cursor-pointer px-4 py-2 text-xs rounded-lg border border-white/10 bg-white/5 hover:border-[#c8f135]/40 hover:bg-[#c8f135]/10 transition text-white/70">
+                      파일 변경
+                      <input
+                        type="file"
+                        hidden
+                        accept="video/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) setMainFile(f);
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      onClick={() => {
+                        setMainFile(null);
+                        setMainUrl(null);
+                      }}
+                      className="px-4 py-2 text-xs rounded-lg border border-red-400/30 bg-red-400/10 text-red-400 hover:bg-red-400/20 transition"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -285,17 +313,43 @@ export function UploadVideo() {
                     type="file"
                     hidden
                     accept="video/*"
-                    onChange={e => {
+                    onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) setRefFile(f);
                     }}
                   />
                 </label>
               ) : (
-                <video src={refUrl ?? undefined} controls className="rounded-xl w-full" />
+                <div className="space-y-4">
+                  <video src={refUrl ?? undefined} controls className="rounded-xl w-full" />
+
+                  <div className="flex justify-center gap-3">
+                    <label className="cursor-pointer px-4 py-2 text-xs rounded-lg border border-[#5b8fff]/30 bg-[#5b8fff]/10 hover:border-[#5b8fff]/60 transition text-[#5b8fff]">
+                      파일 변경
+                      <input
+                        type="file"
+                        hidden
+                        accept="video/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) setRefFile(f);
+                        }}
+                      />
+                    </label>
+
+                    <button
+                      onClick={() => {
+                        setRefFile(null);
+                        setRefUrl(null);
+                      }}
+                      className="px-4 py-2 text-xs rounded-lg border border-red-400/30 bg-red-400/10 text-red-400 hover:bg-red-400/20 transition"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
-
           </div>
 
           {/* 분석 버튼 */}
@@ -308,7 +362,6 @@ export function UploadVideo() {
               분석 시작하기
             </Button>
           </div>
-
         </div>
       </div>
 
@@ -320,9 +373,7 @@ export function UploadVideo() {
             <div className="text-white/40 text-sm mb-6">포즈 추출 및 자세 평가를 진행하고 있습니다.</div>
 
             {/* ✅ TIPS 폰트 키움 */}
-            <div className="text-white/70 text-lg font-semibold">
-              {TIPS[tipIdx]}
-            </div>
+            <div className="text-white/70 text-lg font-semibold">{TIPS[tipIdx]}</div>
           </div>
         </div>
       )}
