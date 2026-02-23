@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,7 @@ from gemini_feedback import generate_feedback
 from apps.api.report_router import report_router
 
 ROOT = Path(__file__).resolve().parents[2]
+DIST_DIR = ROOT / "apps" / "web" / "dist"
 
 app = FastAPI(
     title="PoseCoach API",
@@ -31,12 +33,7 @@ app.include_router(report_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -209,3 +206,13 @@ async def analyze_video(
                 reference_video.file.close()
             except Exception:
                 pass
+
+
+# ── React SPA 서빙 (HF Spaces / 프로덕션) ──────────────────────
+# dist 폴더가 있을 때만 활성화 (로컬 개발 시에는 Vite dev server 사용)
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="spa-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str) -> FileResponse:
+        return FileResponse(str(DIST_DIR / "index.html"))
