@@ -4,6 +4,7 @@ __pycache__/
 
 # 영상/데이터 (대용량)
 preprocess/data/
+labels.csv
 *.mp4
 *.avi
 *.mov
