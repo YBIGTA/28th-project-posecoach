@@ -39,6 +39,16 @@ An AI-powered exercise form analysis web app built with React and FastAPI, using
 | 데이터베이스 | SQLite |
 | 인증 | bcrypt |
 
+## 배포 환경 / Deployment
+
+| 구분 | 내용 |
+|------|------|
+| 메인 배포 | Modal.com (서버리스 GPU 클라우드) |
+| GPU | NVIDIA T4 |
+| 런타임 | Python 3.11 (Debian Slim) |
+| 웹서버 | FastAPI + Uvicorn |
+| 스토리지 | Modal Volume (영구 저장) |
+
 ## 프로젝트 구조 / Project Structure
 
 ```
@@ -51,18 +61,21 @@ An AI-powered exercise form analysis web app built with React and FastAPI, using
 │   ├── assets/                 # 폰트 파일 (NotoSansKR)
 │   └── web/                    # React 프론트엔드
 │       ├── src/
-│       │   ├── pages/          # Home, Login, Result, UploadVideo 등
+│       │   ├── pages/          # Home, Login, SelectExercise, SelectGrip, UploadVideo, Result, MyPage
 │       │   ├── components/     # UI 컴포넌트 (shadcn/ui)
 │       │   └── lib/            # API 클라이언트, 인증 유틸
 │       └── vite.config.ts
 │
 ├── ds_modules/                 # 분석 모듈
 │   ├── angle_utils.py          # 관절 각도 계산
+│   ├── coord_filter.py         # 키포인트 스무딩
 │   ├── phase_detector.py       # 운동 Phase 검출
 │   ├── exercise_counter.py     # 반복 횟수 카운팅
 │   ├── posture_evaluator_phase.py  # 자세 평가
+│   ├── compute_cohens_d.py     # 통계 유틸
 │   ├── dtw_scorer.py           # DTW 유사도 스코어링
-│   └── reference_*.json        # 레퍼런스 모션 데이터
+│   ├── weights_pushup.json     # 푸시업 평가 가중치
+│   └── weights_pullup.json     # 풀업 평가 가중치
 │
 ├── db/
 │   ├── database.py             # SQLite 스키마, CRUD
@@ -70,10 +83,13 @@ An AI-powered exercise form analysis web app built with React and FastAPI, using
 │
 ├── utils/
 │   ├── keypoints.py            # Pose 모델 로딩
+│   ├── activity_segment.py     # 활동 구간 분리
 │   └── visualization.py        # 스켈레톤 시각화
 │
 ├── gemini_feedback.py          # Gemini API 피드백 생성
-├── preprocess/                 # 영상 전처리 스크립트
+├── modal_app.py                # Modal.com 배포 설정
+├── preprocess/                 # 데이터 전처리 스크립트
+├── scripts/                    # 레퍼런스 데이터 생성 스크립트
 ├── data/                       # 업로드 영상, 프레임, DB
 └── requirements.txt
 ```
@@ -83,7 +99,7 @@ An AI-powered exercise form analysis web app built with React and FastAPI, using
 ### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/your-repo/28th-project-posecoach.git
+git clone https://github.com/YBIGTA/28th-project-posecoach.git
 cd 28th-project-posecoach
 ```
 
@@ -116,6 +132,14 @@ echo "GEMINI_API_KEY=AIza..." > .env
 ```
 
 또는 결과 페이지에서 직접 입력할 수 있습니다.
+
+### 5. Modal 배포 (GPU 서버)
+
+```bash
+pip install modal
+modal setup   # 최초 1회 로그인
+modal deploy modal_app.py
+```
 
 ## 사용 방법 / Usage
 
@@ -152,7 +176,7 @@ echo "GEMINI_API_KEY=AIza..." > .env
 
 ## 파이프라인 최적화 / Pipeline Optimization
 
-HF Spaces 무료 CPU 환경에서의 분석 속도를 개선하기 위해 다음 최적화가 적용되어 있습니다. 분석 정확도에는 영향이 없습니다.
+분석 정확도에는 영향 없이 다음 최적화가 적용되어 있습니다.
 
 | 최적화 | 설명 |
 |--------|------|
@@ -166,5 +190,4 @@ HF Spaces 무료 CPU 환경에서의 분석 속도를 개선하기 위해 다음
 
 | 환경 | 30초 영상 (3fps, ~90프레임) |
 |------|---------------------------|
-| CPU (HF Spaces Free) | ~2-3분 |
-| GPU (T4 등) | ~30초-1분 |
+| GPU T4 (Modal.com) | ~30초-1분 |
