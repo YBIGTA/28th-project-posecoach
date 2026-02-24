@@ -3,7 +3,6 @@ from __future__ import annotations
 import shutil
 import sys
 import time
-import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -14,6 +13,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "preprocess" / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from video_preprocess import extract_frames  # type: ignore
 from extract_yolo_frames import process_frame_batch  # type: ignore
@@ -184,45 +184,24 @@ def _generate_reference_json_realtime(
     exercise_ko: str,
     extract_fps: int,
     out_json_path: Path,
+    model=None,
 ) -> bool:
     """
-    ✅ 옵션 B: scripts/generate_reference.py를 실시간으로 실행해서
-    reference JSON을 생성한다.
+    generate_reference를 직접 호출해서 reference JSON을 생성한다.
+    이미 로드된 pose model을 재사용하여 GPU 모델 재로드를 방지한다.
     """
-    script_path = ROOT / "scripts" / "generate_reference.py"
-    if not script_path.exists():
-        # 스크립트 경로가 다르면 여기서 바로 실패함
-        print(f"⚠ generate_reference.py 없음: {script_path}")
-        return False
+    from generate_reference import generate_reference  # scripts/ in sys.path
 
     out_json_path.parent.mkdir(parents=True, exist_ok=True)
-
     try:
-        subprocess.run(
-            [
-                sys.executable,
-                str(script_path),
-                "--video",
-                str(reference_video_path),
-                "--exercise",
-                exercise_ko,          # ✅ scripts는 한글 choices=["푸시업","풀업"]
-                "--output",
-                str(out_json_path),
-                "--fps",
-                str(int(extract_fps)),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
+        ok = generate_reference(
+            video_path=str(reference_video_path),
+            exercise_type=exercise_ko,
+            output_path=str(out_json_path),
+            extract_fps=extract_fps,
+            model=model,
         )
-        return out_json_path.exists() and out_json_path.stat().st_size > 10
-    except subprocess.CalledProcessError as e:
-        print("⚠ reference JSON 실시간 생성 실패")
-        if e.stdout:
-            print(e.stdout[-2000:])
-        if e.stderr:
-            print(e.stderr[-2000:])
-        return False
+        return bool(ok) and out_json_path.exists() and out_json_path.stat().st_size > 10
     except Exception as e:
         print(f"⚠ reference JSON 실시간 생성 예외: {e}")
         return False
@@ -271,19 +250,24 @@ def run_video_analysis(
         if f.suffix.lower() in {".jpg", ".jpeg", ".png"}
     )
 
-    # --- grayscale 프리로드 (activity filter 디스크 재읽기 제거) ---
+    # --- 프레임을 메모리에 한 번만 로드 (BGR) ---
+    preloaded_bgr: list = [cv2.imread(str(f)) for f in frame_files]
+
+    # --- grayscale 프리로드 (BGR 재사용, 디스크 재읽기 없음) ---
     preloaded_grays: list = []
-    for fpath in frame_files:
-        img = cv2.imread(str(fpath), cv2.IMREAD_GRAYSCALE)
+    for img in preloaded_bgr:
         if img is not None:
-            small = cv2.resize(img, (160, 90), interpolation=cv2.INTER_AREA)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            small = cv2.resize(gray, (160, 90), interpolation=cv2.INTER_AREA)
             preloaded_grays.append(cv2.GaussianBlur(small, (5, 5), 0))
         else:
             preloaded_grays.append(None)
 
-    # --- 키포인트 추출 (배치 YOLO 추론) ---
+    # --- 키포인트 추출 (배치 YOLO 추론, pre-loaded BGR 사용) ---
+    import torch
+    use_half = torch.cuda.is_available()
     pose_model = get_pose_model()
-    batch_results = process_frame_batch(pose_model, frame_files, batch_size=8)
+    batch_results = process_frame_batch(pose_model, preloaded_bgr, batch_size=32, use_half=use_half)
 
     all_keypoints: list[dict] = []
     success_count = 0
@@ -407,6 +391,7 @@ def run_video_analysis(
             exercise_ko=exercise_ko,
             extract_fps=extract_fps,
             out_json_path=runtime_ref_json_path,
+            model=pose_model,
         )
         if ok:
             use_ref_json_path = runtime_ref_json_path

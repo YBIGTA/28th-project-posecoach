@@ -54,8 +54,12 @@ DEFAULT_MODEL = "yolo26n-pose.pt"
 
 
 def load_pose_model(model_name=None):
-    """YOLO26n-pose 모델을 로드한다. 첫 호출 시 자동 다운로드."""
-    return YOLO(model_name or DEFAULT_MODEL)
+    """YOLO26n-pose 모델을 로드한다. CUDA 사용 가능 시 GPU로 로드."""
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = YOLO(model_name or DEFAULT_MODEL)
+    model.to(device)
+    return model
 
 
 def select_best_person(result):

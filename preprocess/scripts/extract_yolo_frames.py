@@ -30,27 +30,27 @@ def process_single_frame(model, img_path):
     return yolo_result_to_dict(results[0])
 
 
-def process_frame_batch(model, img_paths, batch_size=8):
+def process_frame_batch(model, preloaded_bgr: list, batch_size=32, use_half=False):
     """
-    여러 프레임을 배치로 묶어 YOLO pose 추론을 수행한다.
+    여러 프레임(BGR numpy array)을 배치로 묶어 YOLO pose 추론을 수행한다.
 
     Args:
         model: YOLO pose 모델
-        img_paths: 이미지 경로 리스트
-        batch_size: 배치 크기 (기본 8)
+        preloaded_bgr: BGR numpy array 리스트 (None 허용)
+        batch_size: 배치 크기 (기본 32, GPU에서 T4 기준 최적)
+        use_half: FP16 추론 여부 (CUDA에서만 유효, 약 2배 속도 향상)
 
     Returns:
         list[dict | None]: 각 프레임의 키포인트 dict 또는 None
     """
-    all_results = [None] * len(img_paths)
+    all_results = [None] * len(preloaded_bgr)
 
-    for start in range(0, len(img_paths), batch_size):
-        batch_paths = img_paths[start : start + batch_size]
+    for start in range(0, len(preloaded_bgr), batch_size):
+        batch = preloaded_bgr[start : start + batch_size]
         imgs = []
         valid_indices = []
 
-        for i, fpath in enumerate(batch_paths):
-            img = cv2.imread(str(fpath))
+        for i, img in enumerate(batch):
             if img is not None:
                 imgs.append(img)
                 valid_indices.append(start + i)
@@ -58,7 +58,7 @@ def process_frame_batch(model, img_paths, batch_size=8):
         if not imgs:
             continue
 
-        results = model(imgs, verbose=False)
+        results = model(imgs, verbose=False, half=use_half)
         for res, global_idx in zip(results, valid_indices):
             pts = yolo_result_to_dict(res)
             all_results[global_idx] = pts

@@ -57,11 +57,10 @@ image = (
     .add_local_dir("./utils", remote_path="/root/utils")
     .add_local_dir("./preprocess", remote_path="/root/preprocess")
     .add_local_dir("./scripts", remote_path="/root/scripts")
-    .add_local_dir("./assets", remote_path="/root/assets")
+    .add_local_dir("./apps/assets", remote_path="/root/assets")
     .add_local_file("./yolo26n-pose.pt", remote_path="/root/yolo26n-pose.pt")
     .add_local_file("./activity_filter.pkl", remote_path="/root/activity_filter.pkl")
     .add_local_file("./gemini_feedback.py", remote_path="/root/gemini_feedback.py")
-    .add_local_file("./labels.csv", remote_path="/root/labels.csv")
 )
 
 # ── 2. 앱 & 볼륨 ──────────────────────────────────────────────

@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from config import FRAME_EXTRACT_FPS, TARGET_RESOLUTION
 from video_preprocess import extract_frames
-from extract_yolo_frames import process_single_frame
+from extract_yolo_frames import process_single_frame, process_frame_batch
 from utils.keypoints import load_pose_model
 
 from ds_modules import compute_virtual_keypoints, normalize_pts, KeypointSmoother
@@ -37,7 +37,7 @@ from ds_modules.dtw_scorer import extract_feature_vector
 
 
 def generate_reference(video_path: str, exercise_type: str, output_path: str,
-                       extract_fps: int = FRAME_EXTRACT_FPS):
+                       extract_fps: int = FRAME_EXTRACT_FPS, model=None):
     """모범 영상에서 페이즈별 피처 시퀀스를 추출하여 JSON으로 저장한다."""
     video_path = Path(video_path)
     if not video_path.exists():
@@ -56,26 +56,29 @@ def generate_reference(video_path: str, exercise_type: str, output_path: str,
 
         # YOLO 키포인트 추출
         print("[2/4] YOLO 키포인트 추출 중...")
-        pose_model = load_pose_model()
+        import torch
+        pose_model = model if model is not None else load_pose_model()
+        use_half = torch.cuda.is_available()
+
         frame_files = sorted(
             f for f in tmp_dir.iterdir()
             if f.suffix.lower() in {".jpg", ".png", ".jpeg"}
         )
 
-        all_keypoints = []
-        for fpath in frame_files:
-            pts = process_single_frame(pose_model, fpath)
-            all_keypoints.append(pts)
+        # 프레임을 메모리에 한 번만 로드
+        preloaded_bgr = [cv2.imread(str(f)) for f in frame_files]
+
+        # 해상도 (첫 유효 프레임에서)
+        first_valid = next((img for img in preloaded_bgr if img is not None), None)
+        if first_valid is not None:
+            img_h, img_w = first_valid.shape[:2]
+        else:
+            img_w, img_h = TARGET_RESOLUTION
+
+        all_keypoints = process_frame_batch(pose_model, preloaded_bgr, batch_size=32, use_half=use_half)
 
         success = sum(1 for p in all_keypoints if p is not None)
         print(f"  -> {success}/{len(frame_files)}개 키포인트 추출")
-
-        # 해상도
-        sample_img = cv2.imread(str(frame_files[0]))
-        if sample_img is not None:
-            img_h, img_w = sample_img.shape[:2]
-        else:
-            img_w, img_h = TARGET_RESOLUTION
 
         # 전처리 + 페이즈 감지 + 피처 추출
         print("[3/4] 페이즈 감지 및 피처 추출 중...")

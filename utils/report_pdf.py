@@ -12,18 +12,27 @@ def _resolve_fonts():
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
+    # (일반체 경로, 볼드체 경로) 쌍으로 관리
     candidates = [
-        ("MalgunGothic", r"C:\Windows\Fonts\malgun.ttf"),
-        ("AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf"),
-        ("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"),
+        # Modal 컨테이너 (/root/assets/ 에 마운트)
+        ("NotoSansKR", "/root/assets/NotoSansKR-Regular.ttf", "/root/assets/NotoSansKR-Bold.ttf"),
+        # 로컬 개발 (프로젝트 상대 경로)
+        ("NotoSansKR", str(Path(__file__).resolve().parents[1] / "apps/assets/NotoSansKR-Regular.ttf"),
+                       str(Path(__file__).resolve().parents[1] / "apps/assets/NotoSansKR-Bold.ttf")),
+        # 시스템 폰트 폴백
+        ("AppleGothic", "/System/Library/Fonts/Supplemental/AppleGothic.ttf", None),
+        ("NanumGothic", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", None),
+        ("MalgunGothic", r"C:\Windows\Fonts\malgun.ttf", None),
     ]
-    for font_name, font_path in candidates:
-        if not Path(font_path).exists():
+    for entry in candidates:
+        font_name, regular_path, bold_path = entry
+        if not Path(regular_path).exists():
             continue
         try:
-            pdfmetrics.registerFont(TTFont(font_name, font_path))
+            pdfmetrics.registerFont(TTFont(font_name, regular_path))
             bold_name = f"{font_name}-Bold"
-            pdfmetrics.registerFont(TTFont(bold_name, font_path))
+            actual_bold = bold_path if bold_path and Path(bold_path).exists() else regular_path
+            pdfmetrics.registerFont(TTFont(bold_name, actual_bold))
             return font_name, bold_name
         except Exception:
             continue

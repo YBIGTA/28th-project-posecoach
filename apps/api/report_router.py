@@ -32,7 +32,19 @@ except ImportError:
 report_router = APIRouter(prefix="/analysis", tags=["report"])
 
 BASE_DIR = Path(__file__).resolve().parent
-FONT_DIR = BASE_DIR.parent / "assets"
+
+def _find_font_dir() -> Path:
+    candidates = [
+        BASE_DIR.parent / "assets",      # 로컬 개발: apps/assets/
+        Path("/root/assets"),             # Modal 배포: /root/assets/
+        BASE_DIR.parents[1] / "assets",  # 기타 상위 경로
+    ]
+    for d in candidates:
+        if (d / "NotoSansKR-Regular.ttf").exists():
+            return d
+    return BASE_DIR.parent / "assets"
+
+FONT_DIR = _find_font_dir()
 
 def register_korean_fonts() -> bool:
     reg  = FONT_DIR / "NotoSansKR-Regular.ttf"
